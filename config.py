@@ -3,7 +3,8 @@ import os.path as osp
 DEFAULT_ROOT_DIR = osp.join((osp.abspath(osp.dirname(__file__))))
 DEFAULT_DATASETS_DIR = osp.join(DEFAULT_ROOT_DIR, 'data')
 
-OPEN_INPUT_LOGDATA_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_input_logdata_full.csv')
+OPEN_INPUT_LOGDATA_FULL_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_input_logdata_full.csv')
+OPEN_INPUT_LOGDATA_TEST_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_input_logdata_test.csv')
 OPEN_PARTICIPANTS_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_participants.csv')
 OPEN_TEST_SECTIONS_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_test_sections.csv')
 
@@ -19,6 +20,9 @@ input_logdata_columns = ['TIMESTAMP', 'LOG_DATA_ID', 'TEST_SECTION_ID', 'TYPE', 
                          'PRESSED', 'DEVICE_ORIENTATION_1', 'DEVICE_ORIENTATION_2', 'DEVICE_ORIENTATION_3',
                          'SCREEN_ORIENTATION', 'INPUT_LEN', 'INPUT_PRLEN',
                          'INPUT_LDIST', 'INPUT_PRLDIST', 'INPUT_LC', 'INPUT_PRLC', 'ITE_SWYP', 'ITE_PRED', 'ITE_AUTO']
+
+logdata_columns = ['TIMESTAMP', 'LOG_DATA_ID', 'TEST_SECTION_ID', 'DATA', 'INPUT',
+                   'ITE_AUTO']  # columns to keep for computation
 
 test_sections_columns = ['TEST_SECTION_ID', 'SENTENCE_ID', 'PARTICIPANT_ID', 'USER_INPUT', 'INPUT_TIME',
                          'EDIT_DISTANCE', 'ERROR_RATE', 'WPM', 'INPUT_LENGTH', 'ERROR_LEN', 'POTENTIAL_WPM',
