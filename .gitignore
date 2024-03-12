@@ -150,8 +150,9 @@ dmypy.json
 .pyre/
 
 # customize
-data
+original_data/
+cleaned_data/
 .idea/
 visualization/
 *.zip
-
+figs/

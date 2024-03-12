@@ -1,13 +1,12 @@
 import os.path as osp
 
 DEFAULT_ROOT_DIR = osp.join((osp.abspath(osp.dirname(__file__))))
-DEFAULT_DATASETS_DIR = osp.join(DEFAULT_ROOT_DIR, 'data')
+DEFAULT_DATASETS_DIR = osp.join(DEFAULT_ROOT_DIR, 'original_data')
+DEFAULT_CLEANED_DATASETS_DIR = osp.join(DEFAULT_ROOT_DIR, 'cleaned_data')
 DEFAULT_VISUALIZATION_DIR = osp.join(DEFAULT_ROOT_DIR, 'visualization')
+DEFAULT_FIGS_DIR = osp.join(DEFAULT_ROOT_DIR, 'figs')
 
 OPEN_INPUT_LOGDATA_FULL_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_input_logdata_full.csv')
-# OPEN_INPUT_LOGDATA_TEST_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_input_logdata_test.csv')
-OPEN_INPUT_LOGDATA_TEST_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_input_logdata_no_ite_test.csv')
-
 OPEN_PARTICIPANTS_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_participants.csv')
 OPEN_TEST_SECTIONS_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_test_sections.csv')
 

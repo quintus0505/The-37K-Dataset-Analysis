@@ -33,12 +33,38 @@ def clean_participants_data(ite=None, keyboard=None):
     df = df[df['KEYBOARD_TYPE'] == 'mobile']
     if not ite:
         df = df[df['USING_FEATURES'] == '\\no\\']
-    elif 'autocorrection' in ite:
-        df = df[df['USING_FEATURES'].str.contains('autocorrection', na=False)]
-    elif 'prediction' in ite:
-        df = df[df['USING_FEATURES'].str.contains('prediction', na=False)]
-    elif 'swype' in ite:
-        df = df[df['USING_FEATURES'].str.contains('swype', na=False)]
+    else:
+        # remove rows with notsure and other
+        df = df[~df['USING_FEATURES'].str.contains('notsure|other', na=False)]
+
+        if 'autocorrection' in ite and 'prediction' not in ite and 'swipe' not in ite:
+            df = df[df['USING_FEATURES'].str.contains('autocorrection', na=False)
+                    & ~df['USING_FEATURES'].str.contains('prediction', na=False)
+                    & ~df['USING_FEATURES'].str.contains('swipe', na=False)]
+        elif 'autocorrection' not in ite and 'prediction' in ite and 'swipe' not in ite:
+            df = df[df['USING_FEATURES'].str.contains('prediction', na=False)
+                    & ~df['USING_FEATURES'].str.contains('autocorrection', na=False)
+                    & ~df['USING_FEATURES'].str.contains('swipe', na=False)]
+        elif 'autocorrection' not in ite and 'prediction' not in ite and 'swipe' in ite:
+            df = df[df['USING_FEATURES'].str.contains('swipe', na=False)
+                    & ~df['USING_FEATURES'].str.contains('autocorrection', na=False)
+                    & ~df['USING_FEATURES'].str.contains('prediction', na=False)]
+        elif 'autocorrection' in ite and 'prediction' in ite and 'swipe' not in ite:
+            df = df[df['USING_FEATURES'].str.contains('autocorrection', na=False)
+                    & df['USING_FEATURES'].str.contains('prediction', na=False)
+                    & ~df['USING_FEATURES'].str.contains('swipe', na=False)]
+        elif 'autocorrection' in ite and 'prediction' not in ite and 'swipe' in ite:
+            df = df[df['USING_FEATURES'].str.contains('autocorrection', na=False)
+                    & ~df['USING_FEATURES'].str.contains('prediction', na=False)
+                    & df['USING_FEATURES'].str.contains('swipe', na=False)]
+        elif 'autocorrection' not in ite and 'prediction' in ite and 'swipe' in ite:
+            df = df[df['USING_FEATURES'].str.contains('prediction', na=False)
+                    & ~df['USING_FEATURES'].str.contains('autocorrection', na=False)
+                    & df['USING_FEATURES'].str.contains('swipe', na=False)]
+        elif 'autocorrection' in ite and 'prediction' in ite and 'swipe' in ite:
+            df = df[df['USING_FEATURES'].str.contains('autocorrection', na=False)
+                    & df['USING_FEATURES'].str.contains('prediction', na=False)
+                    & df['USING_FEATURES'].str.contains('swipe', na=False)]
 
     if keyboard:
         if keyboard == 'Gboard':
@@ -67,7 +93,7 @@ def get_logdata_df(full_log_data=False, ite=None, keyboard=None, data_path=None)
         print("loading data from {}".format(data_path))
 
         # Set chunksize to read the CSV file in chunks
-        chunksize = 5000
+        chunksize = 2000
 
         # get the selected columns id from the logdata_columns and input_logdata_columns
         selected_columns_id = [input_logdata_columns.index(col) for col in logdata_columns if
@@ -81,23 +107,24 @@ def get_logdata_df(full_log_data=False, ite=None, keyboard=None, data_path=None)
         df = pd.concat(chunks, ignore_index=True)
         # find those test sections id which has 'ITE_AUTO' value as 1
         if not ite:
-            remove_test_section_id = df[df['ITE_AUTO'] == 1]['TEST_SECTION_ID'].unique()
-            # remove those test sections id from the dataframe
-            df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
-
-            remove_test_section_id = df[df['ITE_PRED'] == 1]['TEST_SECTION_ID'].unique()
-            # remove those test sections id from the dataframe
-            df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
-
-            # remove those test sections id which has more than 1 char in ''DATA'
-            remove_test_section_id = df[df['DATA'].str.len() > 1]['TEST_SECTION_ID'].unique()
-            # remove those test sections id from the dataframe
-            df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
-
-            remove_test_section_id = df[df['ITE_SWYP'] == 1]['TEST_SECTION_ID'].unique()
-            # remove those test sections id from the dataframe
-            df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
-
+            df = remove_auto_corrected_test_sections(df)
+            df = remove_predicted_test_sections(df)
+            df = remove_swipe_test_sections(df)
+        elif 'autocorrection' in ite and 'prediction' not in ite and 'swipe' not in ite:
+            df = remove_predicted_test_sections(df)
+            df = remove_swipe_test_sections(df)
+        elif 'autocorrection' not in ite and 'prediction' in ite and 'swipe' not in ite:
+            df = remove_auto_corrected_test_sections(df)
+            df = remove_swipe_test_sections(df)
+        elif 'autocorrection' not in ite and 'prediction' not in ite and 'swipe' in ite:
+            df = remove_auto_corrected_test_sections(df)
+            df = remove_predicted_test_sections(df)
+        elif 'autocorrection' in ite and 'prediction' in ite and 'swipe' not in ite:
+            df = remove_swipe_test_sections(df)
+        elif 'autocorrection' in ite and 'prediction' not in ite and 'swipe' in ite:
+            df = remove_predicted_test_sections(df)
+        elif 'autocorrection' not in ite and 'prediction' in ite and 'swipe' in ite:
+            df = remove_auto_corrected_test_sections(df)
 
         # group the dataframe by 'TEST_SECTION_ID', the same test section id sort by timestamp
         df = df.sort_values(by=['TEST_SECTION_ID', 'TIMESTAMP'])
@@ -124,6 +151,33 @@ def get_logdata_df(full_log_data=False, ite=None, keyboard=None, data_path=None)
     print("Total participants: ", len(participant_ids))
     return df
 
+# TODO: Check if the removeing strategy works for prediction and swipe
+def remove_auto_corrected_test_sections(df):
+    # find those test sections id which has 'ITE_AUTO' value as 1
+    remove_test_section_id = df[df['ITE_AUTO'] == 1]['TEST_SECTION_ID'].unique()
+    # remove those test sections id from the dataframe
+    df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
+
+    # remove those test sections id which has more than 1 char in ''DATA'
+    remove_test_section_id = df[df['DATA'].str.len() > 1]['TEST_SECTION_ID'].unique()
+    # remove those test sections id from the dataframe
+    df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
+    return df
+
+
+def remove_predicted_test_sections(df):
+    remove_test_section_id = df[df['ITE_PRED'] == 1]['TEST_SECTION_ID'].unique()
+    # remove those test sections id from the dataframe
+    df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
+    return df
+
+
+def remove_swipe_test_sections(df):
+    remove_test_section_id = df[df['ITE_SWYP'] == 1]['TEST_SECTION_ID'].unique()
+    # remove those test sections id from the dataframe
+    df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
+    return df
+
 
 def get_test_section_df():
     df = pd.DataFrame(columns=test_sections_columns)
@@ -133,7 +187,6 @@ def get_test_section_df():
     print("loading data from {}".format(data_path))
     df = pd.read_csv(data_path, names=df.columns, usecols=range(len(test_sections_columns)),
                      encoding='ISO-8859-1')
-    print("loaded unique setences: ", len(df['SENTENCE_ID'].unique()))
     return df
 
 
@@ -144,7 +197,7 @@ def build_open_input_logdata_test(test_section_num=1000):
     test_section_ids = df['TEST_SECTION_ID'].unique()[:test_section_num]
     new_df = df[df['TEST_SECTION_ID'].isin(test_section_ids)]
     # save without header and index
-    new_df.to_csv(osp.join(DEFAULT_DATASETS_DIR, 'open_input_logdata_test.csv'), index=False, header=False)
+    new_df.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'open_input_logdata_test.csv'), index=False, header=False)
     print("done")
 
 
@@ -166,30 +219,35 @@ def build_custom_logdata(ite=None, keyboard=None, data_path=None, file_name='cus
     # remove those rows where test sections id is not in the selected test sections
     logdata_dataframe = logdata_dataframe[
         logdata_dataframe['TEST_SECTION_ID'].isin(test_sections_dataframe['TEST_SECTION_ID'])]
-
-    logdata_dataframe.to_csv(osp.join(DEFAULT_DATASETS_DIR, file_name), index=False, header=False)
+    # unique test section id
+    test_section_ids = logdata_dataframe['TEST_SECTION_ID'].unique()
+    print("Total test sections: ", len(test_section_ids))
+    # get participants id in test_sections_dataframe with the test section id in target_df
+    participant_ids = test_sections_dataframe['PARTICIPANT_ID'].unique()
+    logdata_dataframe.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, file_name), index=False, header=False)
 
 
 def get_sheet_info(sheet_name):
-    path = osp.join(DEFAULT_DATASETS_DIR, sheet_name)
+    path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, sheet_name)
     test_sections_dataframe = get_test_section_df()
     target_df = pd.read_csv(path, names=logdata_columns, usecols=range(len(logdata_columns)),
                             encoding='ISO-8859-1')
 
     # get those participants id in test_sections_dataframe with the test section id in target_df
-    participant_ids = test_sections_dataframe[test_sections_dataframe['TEST_SECTION_ID'].isin(target_df['TEST_SECTION_ID'])][
-        'PARTICIPANT_ID'].unique()
+    participant_ids = \
+        test_sections_dataframe[test_sections_dataframe['TEST_SECTION_ID'].isin(target_df['TEST_SECTION_ID'])][
+            'PARTICIPANT_ID'].unique()
 
     print("Total participants: ", len(participant_ids))
     print("Total test sections: ", len(target_df['TEST_SECTION_ID'].unique()))
 
 
 if __name__ == "__main__":
-    # df = clean_participants_data()
-    # df = get_logdata_df()
-    # print(df.head())
-    # df = get_test_section_df()
+    dataframe = clean_participants_data()
+    # dataframe = get_logdata_df()
+    # print(dataframe.head())
+    # dataframe = get_test_section_df()
     # build_open_input_logdata_test(test_section_num=1000)
-    data_path = osp.join(DEFAULT_DATASETS_DIR, 'all_keyboard_logdata.csv')
+    data_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'all_keyboard_logdata.csv')
     # build_custom_logdata(ite=None, keyboard='Gboard', file_name='gboard_logdata.csv')
-    get_sheet_info('all_keyboard_logdata.csv')
+    get_sheet_info('gboard_no_ite_logdata.csv')
