@@ -7,7 +7,7 @@ import scipy.stats.mstats as mstats
 from config import *
 
 
-def clean_participants_data():
+def clean_participants_data(ite=None, keyboard=None):
     df = pd.DataFrame(columns=participant_columns)
 
     data_path = OPEN_PARTICIPANTS_PATH
@@ -31,6 +31,20 @@ def clean_participants_data():
 
     # remove those rows where DEVICE is not mobile
     df = df[df['KEYBOARD_TYPE'] == 'mobile']
+    if not ite:
+        df = df[df['USING_FEATURES'] == '\\no\\']
+    elif 'autocorrection' in ite:
+        df = df[df['USING_FEATURES'].str.contains('autocorrection', na=False)]
+    elif 'prediction' in ite:
+        df = df[df['USING_FEATURES'].str.contains('prediction', na=False)]
+    elif 'swype' in ite:
+        df = df[df['USING_FEATURES'].str.contains('swype', na=False)]
+
+    if keyboard:
+        if keyboard == 'Gboard':
+            df = df[df['USING_APP'] == 'Gboard']
+        elif keyboard == 'SwiftKey':
+            df = df[df['USING_APP'] == 'SwiftKey']
 
     # clean the duplicate rows of USING_APP
     df["USING_APP"] = df["USING_APP"].astype(str).apply(lambda x: re.sub(r'(?i)^Kika.*$', 'Kika', x))
@@ -47,16 +61,17 @@ def clean_participants_data():
     return df
 
 
-def get_logdata_df(full_log_data=False):
+def get_logdata_df(full_log_data=False, ite=None, keyboard=None, data_path=None):
     if full_log_data:
         data_path = OPEN_INPUT_LOGDATA_FULL_PATH
         print("loading data from {}".format(data_path))
 
         # Set chunksize to read the CSV file in chunks
-        chunksize = 1000
+        chunksize = 5000
 
         # get the selected columns id from the logdata_columns and input_logdata_columns
-        selected_columns_id = [input_logdata_columns.index(col) for col in logdata_columns if col in input_logdata_columns]
+        selected_columns_id = [input_logdata_columns.index(col) for col in logdata_columns if
+                               col in input_logdata_columns]
         # Use a generator expression to read the CSV file in chunks
         chunks = (chunk for chunk in pd.read_csv(data_path, names=logdata_columns,
                                                  usecols=selected_columns_id, encoding='ISO-8859-1',
@@ -64,18 +79,49 @@ def get_logdata_df(full_log_data=False):
 
         # Concatenate all chunks into a single DataFrame
         df = pd.concat(chunks, ignore_index=True)
+        # find those test sections id which has 'ITE_AUTO' value as 1
+        if not ite:
+            remove_test_section_id = df[df['ITE_AUTO'] == 1]['TEST_SECTION_ID'].unique()
+            # remove those test sections id from the dataframe
+            df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
+
+            remove_test_section_id = df[df['ITE_PRED'] == 1]['TEST_SECTION_ID'].unique()
+            # remove those test sections id from the dataframe
+            df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
+
+            # remove those test sections id which has more than 1 char in ''DATA'
+            remove_test_section_id = df[df['DATA'].str.len() > 1]['TEST_SECTION_ID'].unique()
+            # remove those test sections id from the dataframe
+            df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
+
+            remove_test_section_id = df[df['ITE_SWYP'] == 1]['TEST_SECTION_ID'].unique()
+            # remove those test sections id from the dataframe
+            df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
+
+
         # group the dataframe by 'TEST_SECTION_ID', the same test section id sort by timestamp
         df = df.sort_values(by=['TEST_SECTION_ID', 'TIMESTAMP'])
 
     else:
-        data_path = OPEN_INPUT_LOGDATA_TEST_PATH
-        if not osp.exists(data_path):
+        if not data_path:
+            raise FileNotFoundError("No data path provided for the logdata. Please provide the data path")  # noqa
+        elif not osp.exists(data_path):
             raise FileNotFoundError("File not found: {}, perhaps you should first generate it".format(data_path))
         print("loading data from {}".format(data_path))
         df = pd.read_csv(data_path, names=logdata_columns, usecols=range(len(logdata_columns)),
                          encoding='ISO-8859-1')
 
+        remove_test_section_id = df[df['DATA'].str.len() > 1]['TEST_SECTION_ID'].unique()
+        # remove those test sections id from the dataframe
+        df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
+
+    # get unique test section id
     print("loaded unique test sections: ", len(df['TEST_SECTION_ID'].unique()))
+    # get those participants id in test_sections_dataframe with the test section id in target_df
+    test_section_ids = df['TEST_SECTION_ID'].unique()
+    participant_ids = get_test_section_df()[get_test_section_df()['TEST_SECTION_ID'].isin(test_section_ids)][
+        'PARTICIPANT_ID'].unique()
+    print("Total participants: ", len(participant_ids))
     return df
 
 
@@ -102,9 +148,48 @@ def build_open_input_logdata_test(test_section_num=1000):
     print("done")
 
 
+def build_custom_logdata(ite=None, keyboard=None, data_path=None, file_name='custom_logdata.csv'):
+    participants_dataframe = clean_participants_data(ite=ite, keyboard=keyboard)
+    if not data_path:
+        logdata_dataframe = get_logdata_df(full_log_data=True, ite=ite, keyboard=keyboard)
+    else:
+        logdata_dataframe = get_logdata_df(full_log_data=False, ite=ite, keyboard=keyboard, data_path=data_path)
+    test_sections_dataframe = get_test_section_df()
+
+    # get those logdata with test sections id belonging to the selected participants
+    participant_ids = participants_dataframe['PARTICIPANT_ID'].values
+
+    # remove those rows where PARTICIPANT_ID is not in the selected participants
+    test_sections_dataframe = test_sections_dataframe[
+        test_sections_dataframe['PARTICIPANT_ID'].isin(participant_ids)]
+
+    # remove those rows where test sections id is not in the selected test sections
+    logdata_dataframe = logdata_dataframe[
+        logdata_dataframe['TEST_SECTION_ID'].isin(test_sections_dataframe['TEST_SECTION_ID'])]
+
+    logdata_dataframe.to_csv(osp.join(DEFAULT_DATASETS_DIR, file_name), index=False, header=False)
+
+
+def get_sheet_info(sheet_name):
+    path = osp.join(DEFAULT_DATASETS_DIR, sheet_name)
+    test_sections_dataframe = get_test_section_df()
+    target_df = pd.read_csv(path, names=logdata_columns, usecols=range(len(logdata_columns)),
+                            encoding='ISO-8859-1')
+
+    # get those participants id in test_sections_dataframe with the test section id in target_df
+    participant_ids = test_sections_dataframe[test_sections_dataframe['TEST_SECTION_ID'].isin(target_df['TEST_SECTION_ID'])][
+        'PARTICIPANT_ID'].unique()
+
+    print("Total participants: ", len(participant_ids))
+    print("Total test sections: ", len(target_df['TEST_SECTION_ID'].unique()))
+
+
 if __name__ == "__main__":
     # df = clean_participants_data()
     # df = get_logdata_df()
     # print(df.head())
     # df = get_test_section_df()
-    build_open_input_logdata_test(10000)
+    # build_open_input_logdata_test(test_section_num=1000)
+    data_path = osp.join(DEFAULT_DATASETS_DIR, 'all_keyboard_logdata.csv')
+    # build_custom_logdata(ite=None, keyboard='Gboard', file_name='gboard_logdata.csv')
+    get_sheet_info('all_keyboard_logdata.csv')
