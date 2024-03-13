@@ -5,6 +5,7 @@ import re
 from io import StringIO
 import scipy.stats.mstats as mstats
 from config import *
+import os
 
 
 def clean_participants_data(ite=None, keyboard=None):
@@ -151,6 +152,7 @@ def get_logdata_df(full_log_data=False, ite=None, keyboard=None, data_path=None)
     print("Total participants: ", len(participant_ids))
     return df
 
+
 # TODO: Check if the removeing strategy works for prediction and swipe
 def remove_auto_corrected_test_sections(df):
     # find those test sections id which has 'ITE_AUTO' value as 1
@@ -202,6 +204,8 @@ def build_open_input_logdata_test(test_section_num=1000):
 
 
 def build_custom_logdata(ite=None, keyboard=None, data_path=None, file_name='custom_logdata.csv'):
+    if not osp.exists(DEFAULT_DATASETS_DIR):
+        raise FileNotFoundError("No data path provided for the logdata. check the original data")
     participants_dataframe = clean_participants_data(ite=ite, keyboard=keyboard)
     if not data_path:
         logdata_dataframe = get_logdata_df(full_log_data=True, ite=ite, keyboard=keyboard)
@@ -224,6 +228,8 @@ def build_custom_logdata(ite=None, keyboard=None, data_path=None, file_name='cus
     print("Total test sections: ", len(test_section_ids))
     # get participants id in test_sections_dataframe with the test section id in target_df
     participant_ids = test_sections_dataframe['PARTICIPANT_ID'].unique()
+    if not osp.exists(DEFAULT_CLEANED_DATASETS_DIR):
+        os.makedirs(DEFAULT_CLEANED_DATASETS_DIR)
     logdata_dataframe.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, file_name), index=False, header=False)
 
 

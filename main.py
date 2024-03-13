@@ -13,6 +13,10 @@ parser.add_argument("--keyboard", type=str, default=None, help='keyboard type')
 parser.add_argument("--analyze", action="store_true", default=False, help="anylyze the data")
 parser.add_argument("--visualize", action="store_true", default=False, help="visualize the data")
 
+parser.add_argument("--wmr", action="store_true", default=False, help="wmr")
+parser.add_argument("--ac", action="store_true", default=False, help="ac")
+parser.add_argument("--modification", action="store_true", default=False, help="modification")
+
 args = parser.parse_args()
 
 
@@ -64,12 +68,26 @@ if __name__ == "__main__":
         if not osp.exists(logdata_path):
             raise FileNotFoundError("File not found: ", file_name)
         print("Analyzing logdata file: ", file_name)
-        parser.compute_wmr(full_log_data=True, ite=None, keyboard='Gboard', custom_logdata_path=logdata_path)
-        parser.compute_ac(full_log_data=True, ite=None, keyboard='Gboard', custom_logdata_path=logdata_path)
+        if args.modification:
+            parser.compute_modification(full_log_data=True, ite=ite_list, keyboard=args.keyboard,
+                                        custom_logdata_path=logdata_path)
+        if args.wmr:
+            parser.compute_wmr(full_log_data=True, ite=ite_list, keyboard=args.keyboard,
+                               custom_logdata_path=logdata_path)
+        if args.ac:
+            parser.compute_ac(full_log_data=True, ite=ite_list, keyboard=args.keyboard,
+                              custom_logdata_path=logdata_path)
 
         save_file_name = name_info + 'logdata_visualization.csv'
-        parser.save_iki_wmr_visualization(osp.join(DEFAULT_VISUALIZATION_DIR, 'wmr_' + save_file_name))
-        if args.auto_correct:
+        if not osp.exists(DEFAULT_VISUALIZATION_DIR):
+            os.makedirs(DEFAULT_VISUALIZATION_DIR)
+        if args.modification:
+            parser.save_modification_visualization(
+                osp.join(DEFAULT_VISUALIZATION_DIR, 'modification_' + save_file_name))
+        if args.wmr:
+            parser.save_iki_wmr_visualization(osp.join(DEFAULT_VISUALIZATION_DIR, 'wmr_' + save_file_name))
+
+        if args.auto_correct and args.ac:
             parser.save_iki_ac_visualization(osp.join(DEFAULT_VISUALIZATION_DIR, 'ac_' + save_file_name))
 
     if args.visualize:
@@ -79,19 +97,30 @@ if __name__ == "__main__":
         wmr_file_name = ''
         if args.auto_correct:
             ac_file_name = 'ac_' + name_info + 'logdata_visualization.csv'
-            wmr_file_name = 'wmr_' + name_info + 'logdata_visualization.csv'
-        else:
-            wmr_file_name = 'wmr_' + name_info + 'logdata_visualization.csv'
 
-        if ac_file_name:
+        wmr_file_name = 'wmr_' + name_info + 'logdata_visualization.csv'
+        modification_file_name = 'modification_' + name_info + 'logdata_visualization.csv'
+        if args.modification:
+            modification_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, modification_file_name),
+                                                        names=MODIFICATION_VISUALIZATION_COLUMNS,
+                                                        encoding='ISO-8859-1')
+            show_plot_info(modification_visualization_df, save_file_name=modification_file_name.split('.')[0],
+                           y_label='MODIFICATION')
+            modification_visualization_df = calculate_iki_intervals(modification_visualization_df, y_label='MODIFICATION')
+            plot_modification_vs_iki(modification_visualization_df, save_file_name=modification_file_name.split('.')[0])
+
+        if args.wmr:
+            wmr_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name),
+                                               names=WMR_VISUALIZATION_COLUMNS,
+                                               encoding='ISO-8859-1')
+            show_plot_info(wmr_visualization_df, save_file_name=wmr_file_name.split('.')[0], y_label='WMR')
+            wmr_visualization_df = calculate_iki_intervals(wmr_visualization_df, y_label='WMR')
+            plot_wmr_vs_iki(wmr_visualization_df, save_file_name=wmr_file_name.split('.')[0])
+
+        if ac_file_name and args.ac:
             ac_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, ac_file_name),
                                               names=AC_VISUALIZATION_COLUMNS,
                                               encoding='ISO-8859-1')
-            show_plot_info(ac_visualization_df, save_file_name=ac_file_name.split('.')[0])
-            ac_visualization_df = calculate_iki_intervals(ac_visualization_df)
+            show_plot_info(ac_visualization_df, save_file_name=ac_file_name.split('.')[0], y_label='AC')
+            ac_visualization_df = calculate_iki_intervals(ac_visualization_df, y_label='AC')
             plot_ac_vs_iki(ac_visualization_df, save_file_name=ac_file_name.split('.')[0])
-        wmr_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name), names=WMR_VISUALIZATION_COLUMNS,
-                        encoding='ISO-8859-1')
-        show_plot_info(wmr_visualization_df, save_file_name=wmr_file_name.split('.')[0])
-        wmr_visualization_df = calculate_iki_intervals(wmr_visualization_df)
-        plot_wmr_vs_iki(wmr_visualization_df, save_file_name=wmr_file_name.split('.')[0])
