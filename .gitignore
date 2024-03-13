@@ -150,7 +150,11 @@ dmypy.json
 .pyre/
 
 # customize
-original_data/
+original_data/*csv
+original_data/*xlsx
+original_data/*ipynb
+original_data/*sql
+
 cleaned_data/
 .idea/
 visualization/
