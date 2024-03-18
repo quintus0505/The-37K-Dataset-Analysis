@@ -15,10 +15,13 @@ For using the code, you need to download the dataset and put the csv files in th
 + **--keyboard** The keyboard used by the participants, currently support "Gboard", without his option, the code will process all the keyboards
 + **--auto-correct** Whether to compute the Auto-Correction Ratio (AC)
 
-#### metrics
+#### metrics (for analyzing and visualization)
 + **--modification** Compute the modification ratio on characters level
 + **--wmr** Compute the Word Modified Ratio (WMR) on word level
 + **--ac** Compute the Auto-Correction Ratio (AC) on word level
+
+#### other info (for analyzing and visualization)
++ **--age** get the age vs iki
 
 ### Generating the needed dataset
 

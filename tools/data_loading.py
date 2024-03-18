@@ -160,10 +160,10 @@ def remove_auto_corrected_test_sections(df):
     # remove those test sections id from the dataframe
     df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
 
-    # remove those test sections id which has more than 1 char in ''DATA'
-    remove_test_section_id = df[df['DATA'].str.len() > 1]['TEST_SECTION_ID'].unique()
-    # remove those test sections id from the dataframe
-    df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
+    # # remove those test sections id which has more than 1 char in ''DATA'
+    # remove_test_section_id = df[df['DATA'].str.len() > 1]['TEST_SECTION_ID'].unique()
+    # # remove those test sections id from the dataframe
+    # df = df[~df['TEST_SECTION_ID'].isin(remove_test_section_id)]
     return df
 
 
@@ -249,11 +249,11 @@ def get_sheet_info(sheet_name):
 
 
 if __name__ == "__main__":
-    dataframe = clean_participants_data()
+    # dataframe = clean_participants_data()
     # dataframe = get_logdata_df()
     # print(dataframe.head())
     # dataframe = get_test_section_df()
     # build_open_input_logdata_test(test_section_num=1000)
     data_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'all_keyboard_logdata.csv')
     # build_custom_logdata(ite=None, keyboard='Gboard', file_name='gboard_logdata.csv')
-    get_sheet_info('gboard_no_ite_logdata.csv')
+    get_sheet_info('gboard_no_ite_logdata (remove auto-correct flag).csv')
