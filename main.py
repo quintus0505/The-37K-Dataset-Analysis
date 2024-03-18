@@ -1,6 +1,7 @@
 from config import *
 from tools.data_loading import *
 from tools.parser import *
+from tools.visualization import *
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -12,11 +13,13 @@ parser.add_argument("--swipe", action="store_true", default=False, help='if cons
 parser.add_argument("--keyboard", type=str, default=None, help='keyboard type')
 parser.add_argument("--analyze", action="store_true", default=False, help="anylyze the data")
 parser.add_argument("--visualize", action="store_true", default=False, help="visualize the data")
+parser.add_argument("--filter", type=float, default=0, help='filter those test section with iki below this percentage')
 
 parser.add_argument("--wmr", action="store_true", default=False, help="wmr")
 parser.add_argument("--ac", action="store_true", default=False, help="ac")
 parser.add_argument("--modification", action="store_true", default=False, help="modification")
 parser.add_argument("--age", action="store_true", default=False, help="age")
+parser.add_argument("--num", action="store_true", default=False, help="num")
 
 args = parser.parse_args()
 
@@ -95,6 +98,17 @@ if __name__ == "__main__":
         if args.age:
             parser.save_iki_age_visualization(osp.join(DEFAULT_VISUALIZATION_DIR, 'age_' + save_file_name))
 
+    if args.filter:
+        parser = Parse()
+        filter_ratio = args.filter
+        print("filtering data below {} % perscent".format(args.filter))
+        name_info, ite_list, kbd = get_name_str()
+        save_file_name = 'filtered_' + str(args.filter) + "_" + name_info + 'logdata.csv'
+        file_name = name_info + 'logdata.csv'
+        logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, file_name)
+        parser.filter(filter_ratio=filter_ratio, ite=ite_list, keyboard=kbd, save_file_name=save_file_name,
+                      load_file_name=logdata_path)
+
     if args.visualize:
         interval_size = 10
         print("visualizing data")
@@ -106,35 +120,37 @@ if __name__ == "__main__":
 
         wmr_file_name = 'wmr_' + name_info + 'logdata_visualization.csv'
         modification_file_name = 'modification_' + name_info + 'logdata_visualization.csv'
+
         if args.modification:
             modification_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, modification_file_name),
                                                         names=MODIFICATION_VISUALIZATION_COLUMNS,
                                                         encoding='ISO-8859-1')
             show_plot_info(modification_visualization_df, save_file_name=modification_file_name.split('.')[0],
                            y_label='MODIFICATION')
-            modification_visualization_df = calculate_iki_intervals(modification_visualization_df,
-                                                                    y_label='MODIFICATION', interval_size=interval_size)
-            plot_modification_vs_iki(modification_visualization_df, save_file_name=modification_file_name.split('.')[0],
-                                     interval_size=interval_size)
+            iki_interval_df = calculate_iki_intervals(modification_visualization_df,
+                                                      y_label='MODIFICATION', interval_size=interval_size)
+            plot_modification_vs_iki(iki_interval_df, save_file_name=modification_file_name.split('.')[0],
+                                     interval_size=interval_size, origin_df=modification_visualization_df)
 
         if args.wmr:
             wmr_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name),
                                                names=WMR_VISUALIZATION_COLUMNS,
                                                encoding='ISO-8859-1')
             show_plot_info(wmr_visualization_df, save_file_name=wmr_file_name.split('.')[0], y_label='WMR')
-            wmr_visualization_df = calculate_iki_intervals(wmr_visualization_df, y_label='WMR',
-                                                           interval_size=interval_size)
-            plot_wmr_vs_iki(wmr_visualization_df, save_file_name=wmr_file_name.split('.')[0],
-                            interval_size=interval_size)
+            iki_interval_df = calculate_iki_intervals(wmr_visualization_df, y_label='WMR',
+                                                      interval_size=interval_size)
+            plot_wmr_vs_iki(iki_interval_df, save_file_name=wmr_file_name.split('.')[0],
+                            interval_size=interval_size, origin_df=wmr_visualization_df)
 
         if ac_file_name and args.ac:
             ac_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, ac_file_name),
                                               names=AC_VISUALIZATION_COLUMNS,
                                               encoding='ISO-8859-1')
             show_plot_info(ac_visualization_df, save_file_name=ac_file_name.split('.')[0], y_label='AC')
-            ac_visualization_df = calculate_iki_intervals(ac_visualization_df, y_label='AC',
-                                                          interval_size=interval_size)
-            plot_ac_vs_iki(ac_visualization_df, save_file_name=ac_file_name.split('.')[0], interval_size=interval_size)
+            iki_interval_df = calculate_iki_intervals(ac_visualization_df, y_label='AC',
+                                                      interval_size=interval_size)
+            plot_ac_vs_iki(iki_interval_df, save_file_name=ac_file_name.split('.')[0], interval_size=interval_size,
+                           origin_df=ac_visualization_df)
         if args.age:
             age_visualization_df = pd.read_csv(
                 osp.join(DEFAULT_VISUALIZATION_DIR, 'age_' + name_info + 'logdata_visualization.csv'),
@@ -142,7 +158,17 @@ if __name__ == "__main__":
                 encoding='ISO-8859-1')
             show_plot_info(age_visualization_df, save_file_name='age_' + name_info + 'logdata_visualization',
                            y_label='AGE')
-            age_visualization_df = calculate_iki_intervals(age_visualization_df, y_label='AGE',
-                                                           interval_size=interval_size)
-            plot_age_vs_iki(age_visualization_df, save_file_name='age_' + name_info + 'logdata_visualization',
-                            interval_size=interval_size)
+            iki_interval_df = calculate_iki_intervals(age_visualization_df, y_label='AGE',
+                                                      interval_size=interval_size)
+            plot_age_vs_iki(iki_interval_df, save_file_name='age_' + name_info + 'logdata_visualization',
+                            interval_size=interval_size, origin_df=age_visualization_df)
+        if args.num:
+            # visualizing how many test section in each iki interval, based on wmr_logdata
+            num_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name),
+                                               names=WMR_VISUALIZATION_COLUMNS,
+                                               encoding='ISO-8859-1')
+            show_plot_info(num_visualization_df, save_file_name=wmr_file_name.split('.')[0], y_label='NUM')
+            iki_interval_df = calculate_iki_intervals(num_visualization_df, y_label='NUM',
+                                                      interval_size=interval_size)
+            plot_num_vs_iki(iki_interval_df, save_file_name='num_' + name_info + 'logdata_visualization',
+                            interval_size=interval_size, origin_df=num_visualization_df)

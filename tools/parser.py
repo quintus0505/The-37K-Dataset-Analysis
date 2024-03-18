@@ -5,8 +5,6 @@ from config import logdata_columns, DEFAULT_DATASETS_DIR, DEFAULT_VISUALIZATION_
     DEFAULT_FIGS_DIR
 import os.path as osp
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 
 WMR_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'WORD_COUNT', 'MODIFIED_WORD_COUNT', 'IKI', 'WPM']
 AC_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'WORD_COUNT', 'AC_WORD_COUNT', 'IKI', 'AC']
@@ -329,6 +327,52 @@ class Parse(ABC):
 
         print("Word Modified Ratio (WMR): ", self.modified_word_count / self.word_count)
 
+    def filter(self, ite=None, keyboard=None, filter_ratio=0.5, save_file_name=None, load_file_name=None):
+        self.test_section_count = 0
+        self.load_data(ite=ite, keyboard=keyboard, custom_logdata_path=load_file_name)
+        temp_df = pd.DataFrame(columns=['PARTICIPANT_ID', 'TEST_SECTION_ID', 'IKI'])
+        for test_section_id in self.test_section_ids:
+            try:
+                test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
+
+                # word modified flag with false value as a list of words in the committed sentence
+                iki, wpm = self.compute_iki_wpm(test_section_df)
+
+                self.test_section_count += 1
+
+                participant_id = self.test_sections_dataframe[
+                    self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['PARTICIPANT_ID'].values[0]
+
+                temp_df = temp_df.append(
+                    pd.DataFrame([[participant_id, test_section_id, iki]],
+                                 columns=['PARTICIPANT_ID', 'TEST_SECTION_ID', 'IKI']))
+            except:
+                pass
+        iki_filter = temp_df['IKI'].quantile(filter_ratio)
+
+        # get those test section id with iki higher that iki_filter
+        temp_df = temp_df[temp_df['IKI'] > iki_filter]
+
+        # remain those rows in self.logdata_dataframe with the same test section id
+        self.logdata_dataframe = self.logdata_dataframe[
+            self.logdata_dataframe['TEST_SECTION_ID'].isin(temp_df['TEST_SECTION_ID'])]
+
+        # add a new column for self.logdata_dataframe storing iki between each time step, if the test section id is the first new one, then the iki is 0
+        # get the unique test section id
+        test_section_ids = self.logdata_dataframe['TEST_SECTION_ID'].unique()
+        for test_section_id in test_section_ids:
+            test_section_df = self.logdata_dataframe[self.logdata_dataframe['TEST_SECTION_ID'] == test_section_id]
+            iki_list = [0]
+            for i in range(1, len(test_section_df)):
+                iki_list.append(test_section_df.iloc[i]['TIMESTAMP'] - test_section_df.iloc[i - 1]['TIMESTAMP'])
+            self.logdata_dataframe.loc[self.logdata_dataframe['TEST_SECTION_ID'] == test_section_id, 'IKI'] = iki_list
+
+        # print the number of test sections  and unique participants num after filtering
+        print("Number of test sections after filtering: ", len(temp_df['TEST_SECTION_ID'].unique()))
+        print("Number of unique participants after filtering: ", len(temp_df['PARTICIPANT_ID'].unique()))
+
+        self.logdata_dataframe.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, save_file_name), index=False, header=False)
+
 
 def compare_sentences(sentence1, sentence2):
     # Split the sentences into words
@@ -354,183 +398,6 @@ def compare_sentences(sentence1, sentence2):
 
     # If no word has more than one char difference, return False
     return False
-
-
-def calculate_iki_intervals(df, interval_size=10, y_label='WMR'):
-    # Define the intervals for IKI
-    intervals = np.arange(145, 1045, interval_size)
-    df['IKI_interval'] = pd.cut(df['IKI'], bins=intervals, right=False)
-
-    # Group by the IKI_interval and calculate the WMR for each group
-    if y_label == 'WMR':
-        count_level_name = 'WORD_COUNT'
-        compute_target_name = 'MODIFIED_WORD_COUNT'
-        reset_index_name = 'WMR'
-    elif y_label == 'AC':
-        count_level_name = 'WORD_COUNT'
-        compute_target_name = 'AC_WORD_COUNT'
-        reset_index_name = 'AC'
-    elif y_label == 'MODIFICATION':
-        count_level_name = 'CHAR_COUNT'
-        compute_target_name = 'MODIFICATION_COUNT'
-        reset_index_name = 'MODIFICATION'
-    elif y_label == 'AGE':
-        reset_index_name = 'AGE'
-    else:
-        raise ValueError("y_label must be either 'WMR' or 'AC' or 'MODIFICATION'")
-
-    def calculate(x):
-        if y_label == 'AGE':
-            # return the mean of the age for each interval
-            return x['AGE'].mean()
-        else:
-            # print how many rows in each interval, if none, pass
-            try:
-                print("Interval: ", x['IKI_interval'].values[0], " Count: ", len(x))
-            except:
-               pass
-
-            word_count = x[count_level_name].sum()
-            # do not compute those interval with less than 10 counts
-            if word_count == 0 or len(x) < 5:
-                return np.nan  # Return NaN if the word count is zero to avoid division by zero
-            else:
-                return x[compute_target_name].sum() / word_count
-
-    grouped = df.groupby('IKI_interval').apply(calculate)
-
-    return grouped.reset_index(name=reset_index_name)
-
-
-def plot_age_vs_iki(age_intervals_df, save_file_name=None, interval_size=10):
-    # Convert interval to string and get the midpoint for the label
-    plt.figure(figsize=(12, 6))
-    midpoints = age_intervals_df['IKI_interval'].apply(lambda x: (x.left + x.right) / 2).astype(int)
-
-    # Plot the WMR vs IKI intervals
-    plt.bar(midpoints, age_intervals_df['AGE'], width=interval_size, edgecolor='black')
-
-    # Set the title and labels
-    plt.title('Age vs. Typing Interval')
-    plt.xlabel('Typing Interval (ms)')
-    plt.ylabel('Age')
-
-    # Set x-ticks to be the midpoints of intervals, but only label every 50ms
-    plt.xticks(ticks=midpoints, labels=['' if x % (500 / interval_size) != 0 else str(x) for x in midpoints])
-
-    # Rotate x-axis labels for better readability
-    plt.xticks(rotation=90)
-
-    # save the plot
-    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
-    plt.savefig(save_path)
-
-    # Show the plot
-    plt.tight_layout()  # Adjust the padding between and around subplots.
-    plt.show()
-
-
-# Plotting function for WMR vs IKI
-def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, interval_size=10):
-    # Convert interval to string and get the midpoint for the label
-    plt.figure(figsize=(12, 6))
-    midpoints = wmr_intervals_df['IKI_interval'].apply(lambda x: (x.left + x.right) / 2).astype(int)
-
-    # Plot the WMR vs IKI intervals
-    plt.bar(midpoints, wmr_intervals_df['WMR'] * 100, width=interval_size, edgecolor='black')
-
-    # Set the title and labels
-    plt.title('WMR vs. Typing Interval')
-    plt.xlabel('Typing Interval (ms)')
-    plt.ylabel('WMR (%)')
-
-    # Set x-ticks to be the midpoints of intervals, but only label every 50ms
-    plt.xticks(ticks=midpoints, labels=['' if x % (500 / interval_size) != 0 else str(x) for x in midpoints])
-
-    # Rotate x-axis labels for better readability
-    plt.xticks(rotation=90)
-
-    # save the plot
-    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
-    plt.savefig(save_path)
-
-    # Show the plot
-    plt.tight_layout()  # Adjust the padding between and around subplots.
-    plt.show()
-
-
-def plot_modification_vs_iki(modification_intervals_df, save_file_name=None, interval_size=10):
-    # Convert interval to string and get the midpoint for the label
-    plt.figure(figsize=(12, 6))
-    midpoints = modification_intervals_df['IKI_interval'].apply(lambda x: (x.left + x.right) / 2).astype(int)
-
-    # Plot the WMR vs IKI intervals
-    plt.bar(midpoints, modification_intervals_df['MODIFICATION'] * 100, width=interval_size, edgecolor='black')
-
-    # Set the title and labels
-    plt.title('Modification ratio vs. Typing Interval')
-    plt.xlabel('Typing Interval (ms)')
-    plt.ylabel('Modification ratio (%)')
-
-    # Set x-ticks to be the midpoints of intervals, but only label every 50ms
-    plt.xticks(ticks=midpoints, labels=['' if x % (500 / interval_size) != 0 else str(x) for x in midpoints])
-
-    # Rotate x-axis labels for better readability
-    plt.xticks(rotation=90)
-
-    # save the plot
-    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
-    plt.savefig(save_path)
-
-    # Show the plot
-    plt.tight_layout()  # Adjust the padding between and around subplots.
-    plt.show()
-
-
-def plot_ac_vs_iki(ac_intervals_df, save_file_name=None, interval_size=10):
-    # Convert interval to string and get the midpoint for the label
-    plt.figure(figsize=(12, 6))
-    midpoints = ac_intervals_df['IKI_interval'].apply(lambda x: (x.left + x.right) / 2).astype(int)
-
-    # Plot the WMR vs IKI intervals
-    plt.bar(midpoints, ac_intervals_df['AC'] * 100, width=interval_size, edgecolor='black')
-
-    # Set the title and labels
-    plt.title('Auto-corrected ratio vs. Typing Interval')
-    plt.xlabel('Typing Interval (ms)')
-    plt.ylabel('Auto-corrected ratio (%)')
-
-    # Set x-ticks to be the midpoints of intervals, but only label every 50ms
-    plt.xticks(ticks=midpoints, labels=['' if x % (500 / interval_size) != 0 else str(x) for x in midpoints])
-
-    # Rotate x-axis labels for better readability
-    plt.xticks(rotation=90)
-
-    # save the plot
-    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
-    plt.savefig(save_path)
-
-    # Show the plot
-    plt.tight_layout()  # Adjust the padding between and around subplots.
-    plt.show()
-
-
-def show_plot_info(df, save_file_name, y_label='WMR'):
-    print("Total participants: ", len(df['PARTICIPANT_ID'].unique()))
-    print("Total test sections: ", len(df['TEST_SECTION_ID'].unique()))
-    # add all the AC world count and word count then calculate the ratio
-    if y_label == 'WMR':
-        print("Plotting Word Modified Ratio (WMR) vs. Typing Interval for file: ", save_file_name)
-        print("Word Modified Ratio (WMR): ", df['MODIFIED_WORD_COUNT'].sum() / df['WORD_COUNT'].sum())
-    elif y_label == 'AC':
-        print("Plotting Auto-corrected ratio vs. Typing Interval for file: ", save_file_name)
-        print("Auto-corrected ratio: ", df['AC_WORD_COUNT'].sum() / df['WORD_COUNT'].sum())
-    elif y_label == 'MODIFICATION':
-        print("Plotting Modification ratio vs. Typing Interval for file: ", save_file_name)
-        print("Modification ratio: ", df['MODIFICATION_COUNT'].sum() / df['CHAR_COUNT'].sum())
-    elif y_label == 'AGE':
-        print("Plotting Age vs. Typing Interval for file: ", save_file_name)
-        print("Average age: ", df['AGE'].mean())
 
 
 if __name__ == "__main__":
