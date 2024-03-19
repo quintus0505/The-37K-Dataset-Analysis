@@ -9,6 +9,7 @@ DEFAULT_FIGS_DIR = osp.join(DEFAULT_ROOT_DIR, 'figs')
 OPEN_INPUT_LOGDATA_FULL_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_input_logdata_full.csv')
 OPEN_PARTICIPANTS_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_participants.csv')
 OPEN_TEST_SECTIONS_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_test_sections.csv')
+OPEN_SENTENCES_PATH = osp.join(DEFAULT_DATASETS_DIR, 'sentences.csv')
 
 participant_columns = ['PARTICIPANT_ID', 'BROWSER', 'BROWSER_LANGUAGE', 'DEVICE', 'SCREEN_W', 'SCREEN_H', 'AGE',
                        'GENDER',
@@ -30,3 +31,5 @@ test_sections_columns = ['TEST_SECTION_ID', 'SENTENCE_ID', 'PARTICIPANT_ID', 'US
                          'EDIT_DISTANCE', 'ERROR_RATE', 'WPM', 'INPUT_LENGTH', 'ERROR_LEN', 'POTENTIAL_WPM',
                          'POTENTIAL_LENGTH', 'DEVICE', 'TS_IKI', 'TS_KPD', 'TS_BSP', 'TS_ECPC', 'TS_UILEN', 'TS_KS',
                          'TS_KSPC', 'N_SWYP', 'N_PRED', 'N_AUTO', 'PR_SWYP', 'PR_PRED', 'PR_AUTO', 'TS_NUM_WORDS']
+
+sentences_columns = ['SENTENCE_ID', 'SENTENCE', 'SOURCE']

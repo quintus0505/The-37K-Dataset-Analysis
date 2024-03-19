@@ -1,16 +1,18 @@
 from abc import ABC, abstractmethod
-from tools.data_loading import clean_participants_data, get_logdata_df, get_test_section_df
+from tools.data_loading import clean_participants_data, get_logdata_df, get_test_section_df, get_sentences_df
 import pandas as pd
 from config import logdata_columns, DEFAULT_DATASETS_DIR, DEFAULT_VISUALIZATION_DIR, DEFAULT_CLEANED_DATASETS_DIR, \
     DEFAULT_FIGS_DIR
 import os.path as osp
 import numpy as np
+import Levenshtein
 
 WMR_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'WORD_COUNT', 'MODIFIED_WORD_COUNT', 'IKI', 'WPM']
 AC_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'WORD_COUNT', 'AC_WORD_COUNT', 'IKI', 'AC']
 MODIFICATION_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'CHAR_COUNT', 'MODIFICATION_COUNT', 'IKI',
                                       'MODIFICATION']
 AGE_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'IKI', 'AGE']
+EDIT_DISTANCE_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'EDIT_DISTANCE', 'IKI', 'ERROR_RATE']
 
 
 class Parse(ABC):
@@ -18,6 +20,7 @@ class Parse(ABC):
         self.participants_dataframe = None
         self.logdata_dataframe = None
         self.test_sections_dataframe = None
+        self.sentences_dataframe = None
 
         self.word_count = 0
         self.char_count = 0
@@ -31,6 +34,7 @@ class Parse(ABC):
         self.ac_visualization_df = pd.DataFrame(columns=AC_VISUALIZATION_COLUMNS)
         self.modification_visualization_df = pd.DataFrame(columns=MODIFICATION_VISUALIZATION_COLUMNS)
         self.age_visualization_df = pd.DataFrame(columns=AGE_VISUALIZATION_COLUMNS)
+        self.edit_distance_visualization_df = pd.DataFrame(columns=EDIT_DISTANCE_VISUALIZATION_COLUMNS)
 
         self.test_section_ids = None
 
@@ -43,6 +47,9 @@ class Parse(ABC):
     def save_modification_visualization(self, path):
         self.modification_visualization_df.to_csv(path, index=False, header=False)
 
+    def save_edit_distance_visualization(self, path):
+        self.edit_distance_visualization_df.to_csv(path, index=False, header=False)
+
     def save_iki_age_visualization(self, path):
         self.age_visualization_df.to_csv(path, index=False, header=False)
 
@@ -54,6 +61,9 @@ class Parse(ABC):
 
     def load_test_sections(self):
         self.test_sections_dataframe = get_test_section_df()
+
+    def load_sentences(self):
+        self.sentences_dataframe = get_sentences_df()
 
     def compute_iki_wpm(self, test_section_df):
         if len(test_section_df) == 0:
@@ -146,6 +156,49 @@ class Parse(ABC):
                     print('AGE: ', age)
                     print("test_section_count: ", self.test_section_count)
                     print("test_section_id: ", test_section_id)
+            except:
+                pass
+
+    def compute_edit_distance(self, full_log_data, ite=None, keyboard=None, custom_logdata_path=None):
+        """
+        Compute the edit distance between the committed sentence and the input sentence
+        :return:
+        """
+        self.test_section_count = 0
+        self.load_data(ite=ite, keyboard=keyboard, full_log_data=full_log_data, custom_logdata_path=custom_logdata_path)
+        self.load_test_sections()
+        self.load_sentences()
+        for test_section_id in self.test_section_ids:
+            try:
+                test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
+                if committed_sentence != committed_sentence:
+                    continue
+
+                iki, wpm = self.compute_iki_wpm(test_section_df)
+                self.test_section_count += 1
+                participant_id = self.test_sections_dataframe[
+                    self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['PARTICIPANT_ID'].values[0]
+                # edit_distance = self.test_sections_dataframe[
+                #     self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['EDIT_DISTANCE'].values[0]
+                sentence_id = self.test_sections_dataframe[
+                    self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['SENTENCE_ID'].values[0]
+                target_sentence = self.sentences_dataframe[self.sentences_dataframe['SENTENCE_ID'] == sentence_id]['SENTENCE'].values[
+                    0]
+                edit_distance = Levenshtein.distance(committed_sentence, target_sentence)
+                error_rate = self.test_sections_dataframe[
+                    self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['ERROR_RATE'].values[0]
+                self.edit_distance_visualization_df = self.edit_distance_visualization_df.append(
+                    pd.DataFrame(
+                        [[participant_id, test_section_id, edit_distance,
+                          iki, error_rate]],
+                        columns=EDIT_DISTANCE_VISUALIZATION_COLUMNS))
+
+                if self.test_section_count % 1000 == 0:
+                    print('IKI: ', iki)
+                    print("Edit distance: ", edit_distance)
+                    print("test_section_count: ", self.test_section_count)
+                    print("test_section_id: ", test_section_id)
+
             except:
                 pass
 

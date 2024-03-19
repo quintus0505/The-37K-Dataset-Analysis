@@ -51,6 +51,8 @@ def calculate_iki_intervals(df, interval_size=10, y_label='WMR'):
         reset_index_name = 'AGE'
     elif y_label == 'NUM':
         reset_index_name = 'NUM'
+    elif y_label == 'EDIT_DISTANCE':
+        reset_index_name = 'EDIT_DISTANCE'
     else:
         raise ValueError("y_label must be either 'WMR' or 'AC' or 'MODIFICATION'")
 
@@ -58,6 +60,8 @@ def calculate_iki_intervals(df, interval_size=10, y_label='WMR'):
         if y_label == 'AGE':
             # return the mean of the age for each interval
             return x['AGE'].mean()
+        elif y_label == 'EDIT_DISTANCE':
+            return x['EDIT_DISTANCE'].mean()
         elif y_label == 'NUM':
             return len(x['TEST_SECTION_ID'])
         else:
@@ -253,7 +257,6 @@ def plot_num_vs_iki(num_intervals_df, save_file_name=None, origin_df=None, inter
     iki_95 = origin_df['IKI'].quantile(0.95)
     iki_99 = origin_df['IKI'].quantile(0.99)
 
-
     plt.figure(figsize=(12, 6))
     midpoints = num_intervals_df['IKI_interval'].apply(lambda x: (x.left + x.right) / 2).astype(int)
 
@@ -282,6 +285,72 @@ def plot_num_vs_iki(num_intervals_df, save_file_name=None, origin_df=None, inter
     plt.text(iki_75, max(num_intervals_df['NUM']), f'{int(iki_75)}', color='red', horizontalalignment='right')
     plt.text(iki_95, max(num_intervals_df['NUM']), f'{int(iki_95)}', color='red', horizontalalignment='right')
     plt.text(iki_99, max(num_intervals_df['NUM']), f'{int(iki_99)}', color='red', horizontalalignment='right')
+
+    plt.text(iki_25, max(num_intervals_df['NUM']) * 0.9, "25%", color='black', horizontalalignment='right')
+    plt.text(iki_75, max(num_intervals_df['NUM']) * 0.9, "75%", color='black', horizontalalignment='right')
+    plt.text(iki_95, max(num_intervals_df['NUM']) * 0.9, "95%", color='black', horizontalalignment='right')
+    plt.text(iki_99, max(num_intervals_df['NUM']) * 0.9, "99%", color='black', horizontalalignment='right')
+
+    # # Add legend
+    # plt.legend()
+
+    # save the plot
+    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
+    plt.savefig(save_path)
+
+    # Show the plot
+    plt.tight_layout()  # Adjust the padding between and around subplots.
+    plt.show()
+
+
+def plot_edit_distance_vs_iki(edit_distance_intervals_df, save_file_name=None, origin_df=None, interval_size=10):
+    # Convert interval to string and get the midpoint for the label
+    iki_25 = origin_df['IKI'].quantile(0.25)
+    iki_75 = origin_df['IKI'].quantile(0.75)
+    iki_95 = origin_df['IKI'].quantile(0.95)
+    iki_99 = origin_df['IKI'].quantile(0.99)
+
+    plt.figure(figsize=(12, 6))
+    midpoints = edit_distance_intervals_df['IKI_interval'].apply(lambda x: (x.left + x.right) / 2).astype(int)
+
+    # Plot the WMR vs IKI intervals
+    plt.bar(midpoints, edit_distance_intervals_df['EDIT_DISTANCE'], width=interval_size, edgecolor='black')
+
+    # Set the title and labels
+    plt.title('Edit Distance vs. Typing Interval')
+    plt.xlabel('Typing Interval (ms)')
+    plt.ylabel('Edit Distance')
+
+    # Set x-ticks to be the midpoints of intervals, but only label every 50ms
+    plt.xticks(ticks=midpoints, labels=['' if x % (500 / interval_size) != 0 else str(x) for x in midpoints])
+
+    # Rotate x-axis labels for better readability
+    plt.xticks(rotation=90)
+
+    # Draw red vertical lines for 25% and 75% IKI
+    plt.axvline(x=iki_25, color='red', linestyle='--', label='25% IKI')
+    plt.axvline(x=iki_75, color='red', linestyle='--', label='75% IKI')
+    plt.axvline(x=iki_95, color='red', linestyle='--', label='95% IKI')
+    plt.axvline(x=iki_99, color='red', linestyle='--', label='99% IKI')
+
+    # Text annotations
+    plt.text(iki_25, max(edit_distance_intervals_df['EDIT_DISTANCE']), f'{int(iki_25)}', color='red',
+             horizontalalignment='right')
+    plt.text(iki_75, max(edit_distance_intervals_df['EDIT_DISTANCE']), f'{int(iki_75)}', color='red',
+             horizontalalignment='right')
+    plt.text(iki_95, max(edit_distance_intervals_df['EDIT_DISTANCE']), f'{int(iki_95)}', color='red',
+             horizontalalignment='right')
+    plt.text(iki_99, max(edit_distance_intervals_df['EDIT_DISTANCE']), f'{int(iki_99)}', color='red',
+             horizontalalignment='right')
+
+    plt.text(iki_25, max(edit_distance_intervals_df['EDIT_DISTANCE']) * 0.9, "25%", color='black',
+             horizontalalignment='right')
+    plt.text(iki_75, max(edit_distance_intervals_df['EDIT_DISTANCE']) * 0.9, "75%", color='black',
+                horizontalalignment='right')
+    plt.text(iki_95, max(edit_distance_intervals_df['EDIT_DISTANCE']) * 0.9, "95%", color='black',
+                horizontalalignment='right')
+    plt.text(iki_99, max(edit_distance_intervals_df['EDIT_DISTANCE']) * 0.9, "99%", color='black',
+                horizontalalignment='right')
 
     # # Add legend
     # plt.legend()
@@ -314,3 +383,6 @@ def show_plot_info(df, save_file_name, y_label='WMR'):
     elif y_label == 'NUM':
         print("Plotting Number vs. Typing Interval for file: ", save_file_name)
         print("Total number: ", len(df))
+    elif y_label == 'EDIT_DISTANCE':
+        print("Plotting Edit Distance vs. Typing Interval for file: ", save_file_name)
+        print("Average edit distance: ", df['EDIT_DISTANCE'].mean())

@@ -20,6 +20,7 @@ parser.add_argument("--ac", action="store_true", default=False, help="ac")
 parser.add_argument("--modification", action="store_true", default=False, help="modification")
 parser.add_argument("--age", action="store_true", default=False, help="age")
 parser.add_argument("--num", action="store_true", default=False, help="num")
+parser.add_argument("--edit-distance", action="store_true", default=False, help="edit distance")
 
 args = parser.parse_args()
 
@@ -97,6 +98,11 @@ if __name__ == "__main__":
             parser.save_iki_ac_visualization(osp.join(DEFAULT_VISUALIZATION_DIR, 'ac_' + save_file_name))
         if args.age:
             parser.save_iki_age_visualization(osp.join(DEFAULT_VISUALIZATION_DIR, 'age_' + save_file_name))
+        if args.edit_distance:
+            parser.compute_edit_distance(full_log_data=True, ite=ite_list, keyboard=args.keyboard,
+                                         custom_logdata_path=logdata_path)
+            parser.save_edit_distance_visualization(
+                osp.join(DEFAULT_VISUALIZATION_DIR, 'edit_distance_' + save_file_name))
 
     if args.filter:
         parser = Parse()
@@ -151,6 +157,18 @@ if __name__ == "__main__":
                                                       interval_size=interval_size)
             plot_ac_vs_iki(iki_interval_df, save_file_name=ac_file_name.split('.')[0], interval_size=interval_size,
                            origin_df=ac_visualization_df)
+        if args.edit_distance:
+            edit_distance_visualization_df = pd.read_csv(
+                osp.join(DEFAULT_VISUALIZATION_DIR, 'edit_distance_' + name_info + 'logdata_visualization.csv'),
+                names=EDIT_DISTANCE_VISUALIZATION_COLUMNS,
+                encoding='ISO-8859-1')
+            show_plot_info(edit_distance_visualization_df,
+                           save_file_name='edit_distance_' + name_info + 'logdata_visualization',
+                           y_label='EDIT_DISTANCE')
+            iki_interval_df = calculate_iki_intervals(edit_distance_visualization_df, y_label='EDIT_DISTANCE',
+                                                      interval_size=interval_size)
+            plot_edit_distance_vs_iki(iki_interval_df, save_file_name='edit_distance_' + name_info + 'logdata_visualization',
+                                      interval_size=interval_size, origin_df=edit_distance_visualization_df)
         if args.age:
             age_visualization_df = pd.read_csv(
                 osp.join(DEFAULT_VISUALIZATION_DIR, 'age_' + name_info + 'logdata_visualization.csv'),

@@ -9,6 +9,7 @@ For using the code, you need to download the dataset and put the csv files in th
 #### functions
 + **--data-cleaning** Generate the cleaned dataset
 + **--analyze** Analyze the dataset and save the visaulization sheets
++ **--filter** Filter the dataset by the modification ratio
 + **--visualize** Generate the plots and save them
 
 #### options
@@ -19,14 +20,23 @@ For using the code, you need to download the dataset and put the csv files in th
 + **--modification** Compute the modification ratio on characters level
 + **--wmr** Compute the Word Modified Ratio (WMR) on word level
 + **--ac** Compute the Auto-Correction Ratio (AC) on word level
++ **--edit** Compute the edit distance on character level
 
 #### other info (for analyzing and visualization)
 + **--age** get the age vs iki
++ **--num** get the number of test section vs iki
 
 ### Generating the needed dataset
 
 ```python
 python main.py --data-cleaning --auto-correct --keyboard Gboard
+
+```
+
+### Filtering the dataset
+
+```python
+python main.py --filter 0.8 --auto-correct --keyboard Gboard
 
 ```
 

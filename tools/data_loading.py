@@ -192,6 +192,17 @@ def get_test_section_df():
     return df
 
 
+def get_sentences_df():
+    df = pd.DataFrame(columns=sentences_columns)
+
+    data_path = OPEN_SENTENCES_PATH
+
+    print("loading data from {}".format(data_path))
+    df = pd.read_csv(data_path, names=df.columns, usecols=range(len(sentences_columns)),
+                     encoding='ISO-8859-1')
+    return df
+
+
 def build_open_input_logdata_test(test_section_num=1000):
     # build open_input_logdata_test.csv with the first test_section_num test section
     df = get_logdata_df(full_log_data=True)
