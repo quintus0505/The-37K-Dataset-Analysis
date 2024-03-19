@@ -6,9 +6,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def calculate_iki_intervals(df, interval_size=10, y_label='WMR'):
+def calculate_iki_intervals(df, interval_size=10, y_label='WMR', intervals=(55, 645)):
     # Define the intervals for IKI
-    intervals = np.arange(145, 1045, interval_size)
+    intervals = np.arange(intervals[0], intervals[1], interval_size)
     df['IKI_interval'] = pd.cut(df['IKI'], bins=intervals, right=False)
 
     # print 25%, 50%, 75% iki from the original df
@@ -28,11 +28,9 @@ def calculate_iki_intervals(df, interval_size=10, y_label='WMR'):
     # Above 75% quantile
     above_75 = df[df['IKI'] > df['IKI'].quantile(0.75)].shape[0]
 
-    print("Number of data points below 25% quantile: {}".format(below_25))
-    # print("Number of data points between 25% and 50% quantile: {}".format(between_25_50))
-    # print("Number of data points between 50% and 75% quantile: {}".format(between_50_75))
-    print("Number of data points between 25% and 75% quantile: {}".format(between_25_75))
-    print("Number of data points above 75% quantile: {}".format(above_75))
+    # print("Number of data points below 25% quantile: {}".format(below_25))
+    # print("Number of data points between 25% and 75% quantile: {}".format(between_25_75))
+    # print("Number of data points above 75% quantile: {}".format(above_75))
 
     # Group by the IKI_interval and calculate the WMR for each group
     if y_label == 'WMR':
@@ -146,17 +144,19 @@ def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, origin_df=None, inter
     # Rotate x-axis labels for better readability
     plt.xticks(rotation=90)
 
-    # Draw red vertical lines for 25% and 75% IKI
+    # # Draw red vertical lines for 25% and 75% IKI
     plt.axvline(x=iki_25, color='red', linestyle='--', label='25% IKI')
-    plt.axvline(x=iki_75, color='red', linestyle='--', label='75% IKI')
-    plt.axvline(x=iki_95, color='red', linestyle='--', label='95% IKI')
-
-    # Text annotations
+    # plt.axvline(x=iki_75, color='red', linestyle='--', label='75% IKI')
+    # plt.axvline(x=iki_95, color='red', linestyle='--', label='95% IKI')
+    #
+    # # Text annotations
     plt.text(iki_25, max(wmr_intervals_df['WMR']) * 100, f'{int(iki_25)}', color='red', horizontalalignment='right')
-    plt.text(iki_75, max(wmr_intervals_df['WMR']) * 100, f'{int(iki_75)}', color='red', horizontalalignment='right')
-    plt.text(iki_95, max(wmr_intervals_df['WMR']) * 100, f'{int(iki_95)}', color='red', horizontalalignment='right')
+    # plt.text(iki_75, max(wmr_intervals_df['WMR']) * 100, f'{int(iki_75)}', color='red', horizontalalignment='right')
+    # plt.text(iki_95, max(wmr_intervals_df['WMR']) * 100, f'{int(iki_95)}', color='red', horizontalalignment='right')
     # # Add legend
     # plt.legend()
+
+    plt.text(iki_25, max(wmr_intervals_df['WMR']) * 90, "25%", color='black', horizontalalignment='right')
 
     # save the plot
     save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
@@ -179,9 +179,9 @@ def plot_modification_vs_iki(modification_intervals_df, save_file_name=None, ori
     plt.bar(midpoints, modification_intervals_df['MODIFICATION'] * 100, width=interval_size, edgecolor='black')
 
     # Set the title and labels
-    plt.title('Modification ratio vs. Typing Interval')
+    plt.title('Edit Before Commit vs. Typing Interval')
     plt.xlabel('Typing Interval (ms)')
-    plt.ylabel('Modification ratio (%)')
+    plt.ylabel('Edit Before Commits (%)')
 
     # Set x-ticks to be the midpoints of intervals, but only label every 50ms
     plt.xticks(ticks=midpoints, labels=['' if x % (500 / interval_size) != 0 else str(x) for x in midpoints])
@@ -191,15 +191,18 @@ def plot_modification_vs_iki(modification_intervals_df, save_file_name=None, ori
 
     # Draw red vertical lines for 25% and 75% IKI
     plt.axvline(x=iki_25, color='red', linestyle='--', label='25% IKI')
-    plt.axvline(x=iki_75, color='red', linestyle='--', label='75% IKI')
+    # plt.axvline(x=iki_75, color='red', linestyle='--', label='75% IKI')
 
     # Text annotations
-    plt.text(iki_25, max(modification_intervals_df['MODIFICATION']), f'{int(iki_25)}', color='red',
+    plt.text(iki_25, max(modification_intervals_df['MODIFICATION']) * 100, f'{int(iki_25)}', color='red',
              horizontalalignment='right')
-    plt.text(iki_75, max(modification_intervals_df['MODIFICATION']), f'{int(iki_75)}', color='red',
-             horizontalalignment='right')
+    # plt.text(iki_75, max(modification_intervals_df['MODIFICATION']), f'{int(iki_75)}', color='red',
+    #          horizontalalignment='right')
     # # Add legend
     # plt.legend()
+
+    plt.text(iki_25, max(modification_intervals_df['MODIFICATION']) * 90, "25%", color='black',
+             horizontalalignment='right')
 
     # save the plot
     save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
@@ -232,12 +235,12 @@ def plot_ac_vs_iki(ac_intervals_df, save_file_name=None, origin_df=None, interva
     plt.xticks(rotation=90)
 
     # Draw red vertical lines for 25% and 75% IKI
-    plt.axvline(x=iki_25, color='red', linestyle='--', label='25% IKI')
-    plt.axvline(x=iki_75, color='red', linestyle='--', label='75% IKI')
+    # plt.axvline(x=iki_25, color='red', linestyle='--', label='25% IKI')
+    # plt.axvline(x=iki_75, color='red', linestyle='--', label='75% IKI')
 
     # Text annotations
-    plt.text(iki_25, max(ac_intervals_df['AC']), f'{int(iki_25)}', color='red', horizontalalignment='right')
-    plt.text(iki_75, max(ac_intervals_df['AC']), f'{int(iki_75)}', color='red', horizontalalignment='right')
+    # plt.text(iki_25, max(ac_intervals_df['AC']), f'{int(iki_25)}', color='red', horizontalalignment='right')
+    # plt.text(iki_75, max(ac_intervals_df['AC']), f'{int(iki_75)}', color='red', horizontalalignment='right')
     # # Add legend
     # plt.legend()
 
@@ -346,11 +349,11 @@ def plot_edit_distance_vs_iki(edit_distance_intervals_df, save_file_name=None, o
     plt.text(iki_25, max(edit_distance_intervals_df['EDIT_DISTANCE']) * 0.9, "25%", color='black',
              horizontalalignment='right')
     plt.text(iki_75, max(edit_distance_intervals_df['EDIT_DISTANCE']) * 0.9, "75%", color='black',
-                horizontalalignment='right')
+             horizontalalignment='right')
     plt.text(iki_95, max(edit_distance_intervals_df['EDIT_DISTANCE']) * 0.9, "95%", color='black',
-                horizontalalignment='right')
+             horizontalalignment='right')
     plt.text(iki_99, max(edit_distance_intervals_df['EDIT_DISTANCE']) * 0.9, "99%", color='black',
-                horizontalalignment='right')
+             horizontalalignment='right')
 
     # # Add legend
     # plt.legend()
@@ -362,6 +365,102 @@ def plot_edit_distance_vs_iki(edit_distance_intervals_df, save_file_name=None, o
     # Show the plot
     plt.tight_layout()  # Adjust the padding between and around subplots.
     plt.show()
+
+
+def plot_num_vs_wmr(save_file_name=None, origin_df=None, interval_size=0.05):
+    # use wmr_intervals_df['MODIFIED_WORD_COUNT'] / wmr_intervals_df['WORD_COUNT'] to get the WMR
+    origin_df['WMR'] = origin_df['MODIFIED_WORD_COUNT'] / origin_df['WORD_COUNT']
+
+    wmr_participant_level = origin_df.groupby('PARTICIPANT_ID').apply(
+        lambda x: x['MODIFIED_WORD_COUNT'].sum() / x['WORD_COUNT'].sum())
+    wmr_participant_level = wmr_participant_level.reset_index(name='WMR')
+    intervals = np.arange(0.01, 0.6, interval_size)
+    # plot the num vs wmr, bar is the number of data
+    plt.figure(figsize=(12, 6))
+
+    WMR_dict = {}
+    for index, row in wmr_participant_level.iterrows():
+        # make all the WMR in to the interval
+        wmr = row['WMR']
+        for i in range(len(intervals) - 1):
+            if intervals[i] <= wmr < intervals[i + 1]:
+                if intervals[i] in WMR_dict:
+                    WMR_dict[intervals[i]] += 1
+                else:
+                    WMR_dict[intervals[i]] = 1
+                break
+
+    plt.bar(WMR_dict.keys(), WMR_dict.values(), width=interval_size, edgecolor='black')
+
+    plt.title('Number of participants vs. WMR')
+    plt.xlabel('WMR (%)')
+    plt.ylabel('Number of participants')
+    # set x-tics to be 10, 20, 30, 40, 50, 60
+    plt.xticks(ticks=np.arange(0.05, 0.6, 0.05), labels=[str(int(x * 100)) for x in np.arange(0.05, 0.6, 0.05)])
+    plt.show()
+
+    # save the plot
+    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
+    plt.savefig(save_path)
+
+    # Show the plot
+    plt.tight_layout()  # Adjust the padding between and around subplots.
+    plt.show()
+
+
+def plot_sentence_info(df):
+    # calculate the character count and word count for each sentence and store in ['CHAR_COUNT', 'WORD_COUNT']
+    df['CHAR_COUNT'] = df['SENTENCE'].apply(lambda x: len(x))
+    df['WORD_COUNT'] = df['SENTENCE'].apply(lambda x: len(x.split()))
+
+    # plot character count vs the number of sentences having that character count
+    plt.figure(figsize=(12, 6))
+
+    number_dict = {}
+    for index, row in df.iterrows():
+        length = row['CHAR_COUNT']
+        if length in number_dict:
+            number_dict[length] += 1
+        else:
+            number_dict[length] = 1
+
+    plt.bar(number_dict.keys(), number_dict.values(), width=1, edgecolor='black')
+
+    plt.title('Character count vs. Number of sentences in Typing 37K')
+    plt.xlabel('Character count')
+    plt.ylabel('Number of sentences')
+    plt.show()
+
+    # plot word count vs the number of sentences having that word count
+    plt.figure(figsize=(12, 6))
+    number_dict = {}
+    for index, row in df.iterrows():
+        length = row['WORD_COUNT']
+        if length in number_dict:
+            number_dict[length] += 1
+        else:
+            number_dict[length] = 1
+
+    plt.bar(number_dict.keys(), number_dict.values(), width=1, edgecolor='black')
+
+    plt.title('Word count vs. Number of sentences in Typing 37K')
+
+    plt.xlabel('Word count')
+    plt.ylabel('Number of sentences')
+    plt.show()
+
+    wmr = 0
+    # iterate through the number_dict
+    for key, value in number_dict.items():
+        wmr += value * 1 / key
+
+    wmr /= len(df)
+
+    print("Average WMR: ", wmr)
+
+    # print average character count and word count
+    print("Average character count: ", df['CHAR_COUNT'].mean())
+    print("Average word count: ", df['WORD_COUNT'].mean())
 
 
 def show_plot_info(df, save_file_name, y_label='WMR'):
@@ -386,3 +485,9 @@ def show_plot_info(df, save_file_name, y_label='WMR'):
     elif y_label == 'EDIT_DISTANCE':
         print("Plotting Edit Distance vs. Typing Interval for file: ", save_file_name)
         print("Average edit distance: ", df['EDIT_DISTANCE'].mean())
+
+# from tools.data_loading import get_sentences_df
+#
+# if __name__ == "__main__":
+#     df = get_sentences_df()
+#     plot_sentence_info(df)

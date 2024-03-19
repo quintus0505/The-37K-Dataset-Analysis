@@ -148,6 +148,9 @@ if __name__ == "__main__":
             plot_wmr_vs_iki(iki_interval_df, save_file_name=wmr_file_name.split('.')[0],
                             interval_size=interval_size, origin_df=wmr_visualization_df)
 
+            plot_num_vs_wmr(save_file_name='num_vs_wmr_' + name_info + 'logdata_visualization',
+                            interval_size=0.005, origin_df=wmr_visualization_df)
+
         if ac_file_name and args.ac:
             ac_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, ac_file_name),
                                               names=AC_VISUALIZATION_COLUMNS,

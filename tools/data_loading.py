@@ -200,6 +200,7 @@ def get_sentences_df():
     print("loading data from {}".format(data_path))
     df = pd.read_csv(data_path, names=df.columns, usecols=range(len(sentences_columns)),
                      encoding='ISO-8859-1')
+
     return df
 
 
