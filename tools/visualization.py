@@ -2,6 +2,7 @@ import pandas as pd
 from config import logdata_columns, DEFAULT_DATASETS_DIR, DEFAULT_VISUALIZATION_DIR, DEFAULT_CLEANED_DATASETS_DIR, \
     DEFAULT_FIGS_DIR
 import os.path as osp
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -117,7 +118,10 @@ def plot_age_vs_iki(age_intervals_df, save_file_name=None, origin_df=None, inter
     # plt.legend()
 
     # save the plot
-    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
+    save_dir = osp.join(DEFAULT_FIGS_DIR, 'age_vs_iki')
+    if os.path.exists(save_dir) is False:
+        os.makedirs(save_dir)
+    save_path = osp.join(save_dir, save_file_name)
     plt.savefig(save_path)
 
     # Show the plot
@@ -167,7 +171,10 @@ def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, origin_df=None, inter
     plt.text(iki_25, max(wmr_intervals_df['WMR']) * 90, "25%", color='black', horizontalalignment='right')
 
     # save the plot
-    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
+    save_dir = osp.join(DEFAULT_FIGS_DIR, 'wmr_vs_iki')
+    if os.path.exists(save_dir) is False:
+        os.makedirs(save_dir)
+    save_path = osp.join(save_dir, save_file_name)
     plt.savefig(save_path)
 
     # Show the plot
@@ -218,7 +225,10 @@ def plot_modification_vs_iki(modification_intervals_df, save_file_name=None, ori
              horizontalalignment='right')
 
     # save the plot
-    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
+    save_dir = osp.join(DEFAULT_FIGS_DIR, 'modification_vs_iki')
+    if os.path.exists(save_dir) is False:
+        os.makedirs(save_dir)
+    save_path = osp.join(save_dir, save_file_name)
     plt.savefig(save_path)
 
     # Show the plot
@@ -258,7 +268,10 @@ def plot_ac_vs_iki(ac_intervals_df, save_file_name=None, origin_df=None, interva
     # plt.legend()
 
     # save the plot
-    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
+    save_dir = osp.join(DEFAULT_FIGS_DIR, 'ac_vs_iki')
+    if os.path.exists(save_dir) is False:
+        os.makedirs(save_dir)
+    save_path = osp.join(save_dir, save_file_name)
     plt.savefig(save_path)
 
     # Show the plot
@@ -311,7 +324,10 @@ def plot_num_vs_iki(num_intervals_df, save_file_name=None, origin_df=None, inter
     # plt.legend()
 
     # save the plot
-    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
+    save_dir = osp.join(DEFAULT_FIGS_DIR, 'num_vs_iki')
+    if os.path.exists(save_dir) is False:
+        os.makedirs(save_dir)
+    save_path = osp.join(save_dir, save_file_name)
     plt.savefig(save_path)
 
     # Show the plot
@@ -372,7 +388,10 @@ def plot_edit_distance_vs_iki(edit_distance_intervals_df, save_file_name=None, o
     # plt.legend()
 
     # save the plot
-    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
+    save_dir = osp.join(DEFAULT_FIGS_DIR, 'edit_distance_vs_iki')
+    if os.path.exists(save_dir) is False:
+        os.makedirs(save_dir)
+    save_path = osp.join(save_dir, save_file_name)
     plt.savefig(save_path)
 
     # Show the plot
@@ -412,7 +431,10 @@ def plot_num_vs_wmr(save_file_name=None, origin_df=None, interval_size=0.05, lab
     plt.xticks(ticks=np.arange(0.05, 0.6, 0.05), labels=[str(int(x * 100)) for x in np.arange(0.05, 0.6, 0.05)])
 
     # save the plot
-    save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)
+    save_dir = osp.join(DEFAULT_FIGS_DIR, 'num_vs_wmr')
+    if os.path.exists(save_dir) is False:
+        os.makedirs(save_dir)
+    save_path = osp.join(save_dir, save_file_name)
     plt.savefig(save_path)
 
     # Show the plot
@@ -501,5 +523,5 @@ def show_plot_info(df, save_file_name, y_label='WMR'):
 # from tools.data_loading import get_sentences_df
 #
 # if __name__ == "__main__":
-#     df = get_sentences_df()
-#     plot_sentence_info(df)
+    # df = get_sentences_df()
+    # plot_sentence_info(df)

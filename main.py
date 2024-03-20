@@ -23,7 +23,10 @@ parser.add_argument("--age", action="store_true", default=False, help="age")
 parser.add_argument("--num", action="store_true", default=False, help="num")
 parser.add_argument("--edit-distance", action="store_true", default=False, help="edit distance")
 
-parser.add_argument("--visualize-by-edit-distance", type=int, default=0, help='visualize by edit distance')
+parser.add_argument("--visualize-by-edit-distance", type=int, default=0,
+                    help='split the dataset and visualize by edit distance')
+parser.add_argument("--visualize-by-sentence-length", type=int, default=0,
+                    help='split the dataset and visualize by sentence length')
 
 args = parser.parse_args()
 
@@ -287,7 +290,7 @@ if __name__ == "__main__":
             lt_modification_file_name = 'edit_distance_lt_' + str(
                 args.visualize_by_edit_distance) + '_' + modification_file_name
 
-            show_plot_info(gte_modification_visualization_df, save_file_name=modification_file_name.split('.')[0],
+            show_plot_info(gte_modification_visualization_df, save_file_name=gte_modification_file_name.split('.')[0],
                            y_label='MODIFICATION')
             iki_interval_df = calculate_iki_intervals(gte_modification_visualization_df,
                                                       y_label='MODIFICATION', interval_size=interval_size)
@@ -295,7 +298,7 @@ if __name__ == "__main__":
                                      interval_size=interval_size, origin_df=gte_modification_visualization_df,
                                      label_extra_info=gte_label_extra_info)
 
-            show_plot_info(lt_modification_visualization_df, save_file_name=modification_file_name.split('.')[0],
+            show_plot_info(lt_modification_visualization_df, save_file_name=lt_modification_file_name.split('.')[0],
                            y_label='MODIFICATION')
             iki_interval_df = calculate_iki_intervals(lt_modification_visualization_df,
                                                       y_label='MODIFICATION', interval_size=interval_size)
@@ -330,3 +333,143 @@ if __name__ == "__main__":
                                                       interval_size=interval_size)
             plot_ac_vs_iki(iki_interval_df, save_file_name=lt_ac_file_name.split('.')[0], interval_size=interval_size,
                            origin_df=lt_ac_visualization_df, label_extra_info=lt_label_extra_info)
+
+    if args.visualize_by_sentence_length:
+        interval_size = 10
+        print("visualizing data")
+        name_info, ite_list, kbd, os = get_name_str()
+        ac_file_name = ''
+        wmr_file_name = ''
+        if args.auto_correct:
+            ac_file_name = 'ac_' + name_info + 'logdata_visualization.csv'
+
+        wmr_file_name = 'wmr_' + name_info + 'logdata_visualization.csv'
+        modification_file_name = 'modification_' + name_info + 'logdata_visualization.csv'
+        parser = Parse()
+        parser.load_sentences()
+        parser.load_test_sections()
+        parser.sentences_dataframe['SENTENCE_LENGTH'] = parser.sentences_dataframe['SENTENCE'].apply(
+            lambda x: len(x.split()))
+        parser.test_sections_dataframe = parser.test_sections_dataframe.merge(
+            parser.sentences_dataframe[['SENTENCE_ID', 'SENTENCE_LENGTH']],
+            on='SENTENCE_ID',
+            how='left'
+        )
+
+        sentence_length_gte_ids = parser.test_sections_dataframe[
+            parser.test_sections_dataframe['SENTENCE_LENGTH'] >= args.visualize_by_sentence_length][
+            'TEST_SECTION_ID'].tolist()
+
+        sentence_length_lt_ids = parser.test_sections_dataframe[
+            parser.test_sections_dataframe['SENTENCE_LENGTH'] < args.visualize_by_sentence_length][
+            'TEST_SECTION_ID'].tolist()
+
+        gte_label_extra_info = ' (with sentence length gte ' + str(args.visualize_by_sentence_length) + ' )'
+        lt_label_extra_info = ' (with sentence length lt ' + str(args.visualize_by_sentence_length) + ' )'
+
+        if args.wmr:
+            wmr_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name),
+                                               names=WMR_VISUALIZATION_COLUMNS,
+                                               encoding='ISO-8859-1')
+            gte_wmr_visualization_df = wmr_visualization_df[
+                wmr_visualization_df['TEST_SECTION_ID'].isin(sentence_length_gte_ids)]
+
+            lt_wmr_visualization_df = wmr_visualization_df[
+                wmr_visualization_df['TEST_SECTION_ID'].isin(sentence_length_lt_ids)]
+
+            gte_wmr_file_name = 'sentence_length_gte_' + str(args.visualize_by_sentence_length) + '_' + wmr_file_name
+            lt_wmr_file_name = 'sentence_length_lt_' + str(args.visualize_by_sentence_length) + '_' + wmr_file_name
+
+            gte_num_vs_wmr_save_file_name = 'sentence_length_gte_' + str(
+                args.visualize_by_sentence_length) + '_' + 'num_vs_wmr_' + name_info + 'logdata_visualization'
+
+            lt_num_vs_wmr_save_file_name = 'sentence_length_lt_' + str(
+                args.visualize_by_sentence_length) + '_' + 'num_vs_wmr_' + name_info + 'logdata_visualization'
+
+            show_plot_info(gte_wmr_visualization_df, save_file_name=gte_wmr_file_name.split('.')[0], y_label='WMR')
+            iki_interval_df = calculate_iki_intervals(gte_wmr_visualization_df, y_label='WMR',
+                                                      interval_size=interval_size)
+            plot_wmr_vs_iki(iki_interval_df, save_file_name=gte_wmr_file_name.split('.')[0],
+                            interval_size=interval_size, origin_df=gte_wmr_visualization_df,
+                            label_extra_info=gte_label_extra_info)
+
+            plot_num_vs_wmr(save_file_name=gte_num_vs_wmr_save_file_name,
+                            interval_size=0.005, origin_df=gte_wmr_visualization_df,
+                            label_extra_info=gte_label_extra_info)
+
+            show_plot_info(lt_wmr_visualization_df, save_file_name=lt_wmr_file_name.split('.')[0], y_label='WMR')
+            iki_interval_df = calculate_iki_intervals(lt_wmr_visualization_df, y_label='WMR',
+                                                      interval_size=interval_size)
+            plot_wmr_vs_iki(iki_interval_df, save_file_name=lt_wmr_file_name.split('.')[0],
+                            interval_size=interval_size, origin_df=lt_wmr_visualization_df,
+                            label_extra_info=lt_label_extra_info)
+
+            plot_num_vs_wmr(save_file_name=lt_num_vs_wmr_save_file_name,
+                            interval_size=0.005, origin_df=lt_wmr_visualization_df,
+                            label_extra_info=lt_label_extra_info)
+
+        if args.modification:
+            modification_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, modification_file_name),
+                                                        names=MODIFICATION_VISUALIZATION_COLUMNS,
+                                                        encoding='ISO-8859-1')
+
+            gte_modification_visualization_df = modification_visualization_df[
+                modification_visualization_df['TEST_SECTION_ID'].isin(sentence_length_gte_ids)]
+
+            lt_modification_visualization_df = modification_visualization_df[
+                modification_visualization_df['TEST_SECTION_ID'].isin(sentence_length_lt_ids)]
+
+            gte_modification_file_name = 'sentence_length_gte_' + str(
+                args.visualize_by_sentence_length) + '_' + modification_file_name
+            lt_modification_file_name = 'sentence_length_lt_' + str(
+                args.visualize_by_sentence_length) + '_' + modification_file_name
+
+            show_plot_info(gte_modification_visualization_df, save_file_name=gte_modification_file_name.split('.')[0],
+                           y_label='MODIFICATION')
+            iki_interval_df = calculate_iki_intervals(gte_modification_visualization_df,
+                                                      y_label='MODIFICATION', interval_size=interval_size)
+            plot_modification_vs_iki(iki_interval_df, save_file_name=gte_modification_file_name.split('.')[0],
+                                     interval_size=interval_size, origin_df=gte_modification_visualization_df,
+                                     label_extra_info=gte_label_extra_info)
+
+            show_plot_info(lt_modification_visualization_df, save_file_name=lt_modification_file_name.split('.')[0],
+                           y_label='MODIFICATION')
+            iki_interval_df = calculate_iki_intervals(lt_modification_visualization_df,
+                                                      y_label='MODIFICATION', interval_size=interval_size)
+            plot_modification_vs_iki(iki_interval_df, save_file_name=lt_modification_file_name.split('.')[0],
+                                     interval_size=interval_size, origin_df=lt_modification_visualization_df,
+                                     label_extra_info=lt_label_extra_info)
+
+        if ac_file_name and args.ac:
+            ac_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, ac_file_name),
+                                              names=AC_VISUALIZATION_COLUMNS,
+                                              encoding='ISO-8859-1')
+
+            gte_ac_visualization_df = ac_visualization_df[
+                ac_visualization_df['TEST_SECTION_ID'].isin(sentence_length_gte_ids)]
+
+            lt_ac_visualization_df = ac_visualization_df[
+                ac_visualization_df['TEST_SECTION_ID'].isin(sentence_length_lt_ids)]
+
+            gte_ac_file_name = 'sentence_length_gte_' + str(
+                args.visualize_by_sentence_length) + '_' + ac_file_name
+            lt_ac_file_name = 'sentence_length_lt_' + str(
+                args.visualize_by_sentence_length) + '_' + ac_file_name
+
+            show_plot_info(gte_ac_visualization_df, save_file_name=gte_ac_file_name.split('.')[0], y_label='AC')
+            iki_interval_df = calculate_iki_intervals(gte_ac_visualization_df, y_label='AC',
+                                                      interval_size=interval_size)
+            plot_ac_vs_iki(iki_interval_df, save_file_name=gte_ac_file_name.split('.')[0], interval_size=interval_size,
+                           origin_df=gte_ac_visualization_df, label_extra_info=gte_label_extra_info)
+
+            show_plot_info(lt_ac_visualization_df, save_file_name=lt_ac_file_name.split('.')[0], y_label='AC')
+            iki_interval_df = calculate_iki_intervals(lt_ac_visualization_df, y_label='AC',
+                                                      interval_size=interval_size)
+            plot_ac_vs_iki(iki_interval_df, save_file_name=lt_ac_file_name.split('.')[0], interval_size=interval_size,
+                           origin_df=lt_ac_visualization_df, label_extra_info=lt_label_extra_info)
+
+
+
+
+
+
