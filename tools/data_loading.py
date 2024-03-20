@@ -8,7 +8,7 @@ from config import *
 import os
 
 
-def clean_participants_data(ite=None, keyboard=None):
+def clean_participants_data(ite=None, keyboard=None, os=None):
     df = pd.DataFrame(columns=participant_columns)
 
     data_path = OPEN_PARTICIPANTS_PATH
@@ -30,7 +30,7 @@ def clean_participants_data(ite=None, keyboard=None):
     # remove those rows where LAYOUT is not qwerty
     df = df[df['LAYOUT'] == 'qwerty']
 
-    # remove those rows where DEVICE is not mobile
+    # remove those rows where OS is not mobile
     df = df[df['KEYBOARD_TYPE'] == 'mobile']
     if not ite:
         df = df[df['USING_FEATURES'] == '\\no\\']
@@ -72,6 +72,14 @@ def clean_participants_data(ite=None, keyboard=None):
             df = df[df['USING_APP'] == 'Gboard']
         elif keyboard == 'SwiftKey':
             df = df[df['USING_APP'] == 'SwiftKey']
+
+    if os:
+        if os == 'Android':
+            # getting those rows where BROWSER contain 'Android'
+            df = df[df['BROWSER'].str.contains('Android', na=False)]
+        elif os == 'iOS':
+            # getting those rows where BROWSER do not contain 'iOS'
+            df = df[df['BROWSER'].str.contains('iPhone', na=False)]
 
     # clean the duplicate rows of USING_APP
     df["USING_APP"] = df["USING_APP"].astype(str).apply(lambda x: re.sub(r'(?i)^Kika.*$', 'Kika', x))
@@ -215,10 +223,10 @@ def build_open_input_logdata_test(test_section_num=1000):
     print("done")
 
 
-def build_custom_logdata(ite=None, keyboard=None, data_path=None, file_name='custom_logdata.csv'):
+def build_custom_logdata(ite=None, keyboard=None, data_path=None, os=None, file_name='custom_logdata.csv'):
     if not osp.exists(DEFAULT_DATASETS_DIR):
         raise FileNotFoundError("No data path provided for the logdata. check the original data")
-    participants_dataframe = clean_participants_data(ite=ite, keyboard=keyboard)
+    participants_dataframe = clean_participants_data(ite=ite, keyboard=keyboard, os=os)
     if not data_path:
         logdata_dataframe = get_logdata_df(full_log_data=True, ite=ite, keyboard=keyboard)
     else:

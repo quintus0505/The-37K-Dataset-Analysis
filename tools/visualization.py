@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def calculate_iki_intervals(df, interval_size=10, y_label='WMR', intervals=(55, 645)):
+def calculate_iki_intervals(df, interval_size=10, y_label='WMR', intervals=(125, 1045)):
     # Define the intervals for IKI
     intervals = np.arange(intervals[0], intervals[1], interval_size)
     df['IKI_interval'] = pd.cut(df['IKI'], bins=intervals, right=False)
@@ -15,6 +15,10 @@ def calculate_iki_intervals(df, interval_size=10, y_label='WMR', intervals=(55, 
     print("25% quantile (bottom 25% cutoff) IKI: {}".format(df['IKI'].quantile(0.25)))
     print("50% quantile (median, bottom 50% cutoff) IKI: {}".format(df['IKI'].quantile(0.50)))
     print("75% quantile (bottom 75% cutoff) IKI: {}".format(df['IKI'].quantile(0.75)))
+
+    print(df['IKI'].quantile(0.99))
+    # remove the bottom 1% data from df
+    df = df[df['IKI'] < df['IKI'].quantile(0.99)]
 
     # Counting how many data points belong to each section
     # Below 25% quantile
@@ -81,7 +85,7 @@ def calculate_iki_intervals(df, interval_size=10, y_label='WMR', intervals=(55, 
     return grouped.reset_index(name=reset_index_name)
 
 
-def plot_age_vs_iki(age_intervals_df, save_file_name=None, origin_df=None, interval_size=10):
+def plot_age_vs_iki(age_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info=''):
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_75 = origin_df['IKI'].quantile(0.75)
     # Convert interval to string and get the midpoint for the label
@@ -122,7 +126,7 @@ def plot_age_vs_iki(age_intervals_df, save_file_name=None, origin_df=None, inter
 
 
 # Plotting function for WMR vs IKI
-def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, origin_df=None, interval_size=10):
+def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info=''):
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_75 = origin_df['IKI'].quantile(0.75)
     iki_95 = origin_df['IKI'].quantile(0.9)
@@ -134,13 +138,17 @@ def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, origin_df=None, inter
     plt.bar(midpoints, wmr_intervals_df['WMR'] * 100, width=interval_size, edgecolor='black')
 
     # Set the title and labels
-    plt.title('WMR vs. Typing Interval')
+    plt.title('WMR vs. Typing Interval' + label_extra_info)
     plt.xlabel('Typing Interval (ms)')
     plt.ylabel('WMR (%)')
 
     # Set x-ticks to be the midpoints of intervals, but only label every 50ms
     plt.xticks(ticks=midpoints, labels=['' if x % (500 / interval_size) != 0 else str(x) for x in midpoints])
 
+    # Set the y-axis to start from 5.5
+    plt.yticks(ticks=np.arange(5.5, max(wmr_intervals_df['WMR']) * 100 + 1, 1.0),
+               labels=[str(x) for x in np.arange(5.5, max(wmr_intervals_df['WMR']) * 100 + 1, 1.0)])
+    plt.ylim(bottom=5.5)  # Here's the key change
     # Rotate x-axis labels for better readability
     plt.xticks(rotation=90)
 
@@ -167,7 +175,7 @@ def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, origin_df=None, inter
     plt.show()
 
 
-def plot_modification_vs_iki(modification_intervals_df, save_file_name=None, origin_df=None, interval_size=10):
+def plot_modification_vs_iki(modification_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info=''):
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_75 = origin_df['IKI'].quantile(0.75)
     # Convert interval to string and get the midpoint for
@@ -179,12 +187,17 @@ def plot_modification_vs_iki(modification_intervals_df, save_file_name=None, ori
     plt.bar(midpoints, modification_intervals_df['MODIFICATION'] * 100, width=interval_size, edgecolor='black')
 
     # Set the title and labels
-    plt.title('Edit Before Commit vs. Typing Interval')
+    plt.title('Edit Before Commit vs. Typing Interval' + label_extra_info)
     plt.xlabel('Typing Interval (ms)')
     plt.ylabel('Edit Before Commits (%)')
 
     # Set x-ticks to be the midpoints of intervals, but only label every 50ms
     plt.xticks(ticks=midpoints, labels=['' if x % (500 / interval_size) != 0 else str(x) for x in midpoints])
+
+    # Set the y-axis to start from 5.5
+    plt.yticks(ticks=np.arange(1.0, max(modification_intervals_df['MODIFICATION']) * 100 + 0.5, 0.5),
+               labels=[str(x) for x in np.arange(1.0, max(modification_intervals_df['MODIFICATION']) * 100 + 0.5, 0.5)])
+    plt.ylim(bottom=1.0)  # Here's the key change
 
     # Rotate x-axis labels for better readability
     plt.xticks(rotation=90)
@@ -213,7 +226,7 @@ def plot_modification_vs_iki(modification_intervals_df, save_file_name=None, ori
     plt.show()
 
 
-def plot_ac_vs_iki(ac_intervals_df, save_file_name=None, origin_df=None, interval_size=10):
+def plot_ac_vs_iki(ac_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info=''):
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_75 = origin_df['IKI'].quantile(0.75)
     # Convert interval to string and get the midpoint for the label
@@ -224,7 +237,7 @@ def plot_ac_vs_iki(ac_intervals_df, save_file_name=None, origin_df=None, interva
     plt.bar(midpoints, ac_intervals_df['AC'] * 100, width=interval_size, edgecolor='black')
 
     # Set the title and labels
-    plt.title('Auto-corrected ratio vs. Typing Interval')
+    plt.title('Auto-corrected ratio vs. Typing Interval' + label_extra_info)
     plt.xlabel('Typing Interval (ms)')
     plt.ylabel('Auto-corrected ratio (%)')
 
@@ -253,7 +266,7 @@ def plot_ac_vs_iki(ac_intervals_df, save_file_name=None, origin_df=None, interva
     plt.show()
 
 
-def plot_num_vs_iki(num_intervals_df, save_file_name=None, origin_df=None, interval_size=10):
+def plot_num_vs_iki(num_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info=''):
     # Convert interval to string and get the midpoint for the label
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_75 = origin_df['IKI'].quantile(0.75)
@@ -267,7 +280,7 @@ def plot_num_vs_iki(num_intervals_df, save_file_name=None, origin_df=None, inter
     plt.bar(midpoints, num_intervals_df['NUM'], width=interval_size, edgecolor='black')
 
     # Set the title and labels
-    plt.title('NUM vs. Typing Interval')
+    plt.title('NUM vs. Typing Interval' + label_extra_info)
     plt.xlabel('Typing Interval (ms)')
     plt.ylabel('NUM')
 
@@ -306,7 +319,7 @@ def plot_num_vs_iki(num_intervals_df, save_file_name=None, origin_df=None, inter
     plt.show()
 
 
-def plot_edit_distance_vs_iki(edit_distance_intervals_df, save_file_name=None, origin_df=None, interval_size=10):
+def plot_edit_distance_vs_iki(edit_distance_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info=''):
     # Convert interval to string and get the midpoint for the label
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_75 = origin_df['IKI'].quantile(0.75)
@@ -320,7 +333,7 @@ def plot_edit_distance_vs_iki(edit_distance_intervals_df, save_file_name=None, o
     plt.bar(midpoints, edit_distance_intervals_df['EDIT_DISTANCE'], width=interval_size, edgecolor='black')
 
     # Set the title and labels
-    plt.title('Edit Distance vs. Typing Interval')
+    plt.title('Edit Distance vs. Typing Interval' + label_extra_info)
     plt.xlabel('Typing Interval (ms)')
     plt.ylabel('Edit Distance')
 
@@ -367,7 +380,7 @@ def plot_edit_distance_vs_iki(edit_distance_intervals_df, save_file_name=None, o
     plt.show()
 
 
-def plot_num_vs_wmr(save_file_name=None, origin_df=None, interval_size=0.05):
+def plot_num_vs_wmr(save_file_name=None, origin_df=None, interval_size=0.05, label_extra_info=''):
     # use wmr_intervals_df['MODIFIED_WORD_COUNT'] / wmr_intervals_df['WORD_COUNT'] to get the WMR
     origin_df['WMR'] = origin_df['MODIFIED_WORD_COUNT'] / origin_df['WORD_COUNT']
 
@@ -392,12 +405,11 @@ def plot_num_vs_wmr(save_file_name=None, origin_df=None, interval_size=0.05):
 
     plt.bar(WMR_dict.keys(), WMR_dict.values(), width=interval_size, edgecolor='black')
 
-    plt.title('Number of participants vs. WMR')
+    plt.title('Number of participants vs. WMR' + label_extra_info)
     plt.xlabel('WMR (%)')
     plt.ylabel('Number of participants')
     # set x-tics to be 10, 20, 30, 40, 50, 60
     plt.xticks(ticks=np.arange(0.05, 0.6, 0.05), labels=[str(int(x * 100)) for x in np.arange(0.05, 0.6, 0.05)])
-    plt.show()
 
     # save the plot
     save_path = osp.join(DEFAULT_FIGS_DIR, save_file_name)

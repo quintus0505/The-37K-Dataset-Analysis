@@ -11,6 +11,7 @@ parser.add_argument("--auto-correct", action="store_true", default=False, help='
 parser.add_argument("--predict", action="store_true", default=False, help='if considering prediction')
 parser.add_argument("--swipe", action="store_true", default=False, help='if considering swipe')
 parser.add_argument("--keyboard", type=str, default=None, help='keyboard type')
+parser.add_argument("--os", type=str, default=None, help='os type')
 parser.add_argument("--analyze", action="store_true", default=False, help="anylyze the data")
 parser.add_argument("--visualize", action="store_true", default=False, help="visualize the data")
 parser.add_argument("--filter", type=float, default=0, help='filter those test section with iki below this percentage')
@@ -21,6 +22,8 @@ parser.add_argument("--modification", action="store_true", default=False, help="
 parser.add_argument("--age", action="store_true", default=False, help="age")
 parser.add_argument("--num", action="store_true", default=False, help="num")
 parser.add_argument("--edit-distance", action="store_true", default=False, help="edit distance")
+
+parser.add_argument("--visualize-by-edit-distance", type=int, default=0, help='visualize by edit distance')
 
 args = parser.parse_args()
 
@@ -49,25 +52,31 @@ def get_name_str():
         keyboard = None
         keyboard_str = ''
     print("keyboard: ", keyboard)
-    name_str = keyboard_str + ite_str
+    if args.os:
+        typing_os = args.os
+        os_str = typing_os.lower() + '_'
+    else:
+        typing_os = None
+        os_str = ''
+    name_str = os_str + keyboard_str + ite_str
 
-    return name_str, ite, keyboard
+    return name_str, ite, keyboard, typing_os
 
 
 if __name__ == "__main__":
 
     if args.data_cleaning:
         print("cleaning data")
-        name_info, ite_list, kbd = get_name_str()
+        name_info, ite_list, kbd, os = get_name_str()
         file_name = name_info + 'logdata.csv'
         print("Generating logdata file: ", file_name)
-        build_custom_logdata(ite=ite_list, keyboard=kbd, file_name=file_name)
+        build_custom_logdata(ite=ite_list, keyboard=kbd, file_name=file_name, os=os)
         get_sheet_info(sheet_name=file_name)
 
     if args.analyze:
         print("analyzing data")
         parser = Parse()
-        name_info, ite_list, kbd = get_name_str()
+        name_info, ite_list, kbd, os = get_name_str()
         file_name = name_info + 'logdata.csv'
         logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, file_name)
         if not osp.exists(logdata_path):
@@ -108,7 +117,7 @@ if __name__ == "__main__":
         parser = Parse()
         filter_ratio = args.filter
         print("filtering data below {} % perscent".format(args.filter))
-        name_info, ite_list, kbd = get_name_str()
+        name_info, ite_list, kbd, os = get_name_str()
         save_file_name = 'filtered_' + str(args.filter) + "_" + name_info + 'logdata.csv'
         file_name = name_info + 'logdata.csv'
         logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, file_name)
@@ -118,7 +127,7 @@ if __name__ == "__main__":
     if args.visualize:
         interval_size = 10
         print("visualizing data")
-        name_info, ite_list, kbd = get_name_str()
+        name_info, ite_list, kbd, os = get_name_str()
         ac_file_name = ''
         wmr_file_name = ''
         if args.auto_correct:
@@ -170,7 +179,8 @@ if __name__ == "__main__":
                            y_label='EDIT_DISTANCE')
             iki_interval_df = calculate_iki_intervals(edit_distance_visualization_df, y_label='EDIT_DISTANCE',
                                                       interval_size=interval_size)
-            plot_edit_distance_vs_iki(iki_interval_df, save_file_name='edit_distance_' + name_info + 'logdata_visualization',
+            plot_edit_distance_vs_iki(iki_interval_df,
+                                      save_file_name='edit_distance_' + name_info + 'logdata_visualization',
                                       interval_size=interval_size, origin_df=edit_distance_visualization_df)
         if args.age:
             age_visualization_df = pd.read_csv(
@@ -193,3 +203,130 @@ if __name__ == "__main__":
                                                       interval_size=interval_size)
             plot_num_vs_iki(iki_interval_df, save_file_name='num_' + name_info + 'logdata_visualization',
                             interval_size=interval_size, origin_df=num_visualization_df)
+
+    if args.visualize_by_edit_distance:
+        interval_size = 10
+        print("visualizing data")
+        name_info, ite_list, kbd, os = get_name_str()
+        ac_file_name = ''
+        wmr_file_name = ''
+        if args.auto_correct:
+            ac_file_name = 'ac_' + name_info + 'logdata_visualization.csv'
+
+        wmr_file_name = 'wmr_' + name_info + 'logdata_visualization.csv'
+        modification_file_name = 'modification_' + name_info + 'logdata_visualization.csv'
+        parser = Parse()
+        parser.edit_distance_visualization_df = pd.read_csv(
+            osp.join(DEFAULT_VISUALIZATION_DIR, 'edit_distance_' + name_info + 'logdata_visualization.csv'),
+            names=EDIT_DISTANCE_VISUALIZATION_COLUMNS,
+            encoding='ISO-8859-1')
+        edit_distance_gte_ids = parser.edit_distance_visualization_df[
+            parser.edit_distance_visualization_df['EDIT_DISTANCE'] >= args.visualize_by_edit_distance][
+            'TEST_SECTION_ID'].tolist()
+
+        edit_distance_lt_ids = parser.edit_distance_visualization_df[
+            parser.edit_distance_visualization_df['EDIT_DISTANCE'] < args.visualize_by_edit_distance][
+            'TEST_SECTION_ID'].tolist()
+
+        gte_label_extra_info = ' (with edit distance gte ' + str(args.visualize_by_edit_distance) + ' )'
+        lt_label_extra_info = ' (with edit distance lt ' + str(args.visualize_by_edit_distance) + ' )'
+        if args.wmr:
+            wmr_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name),
+                                               names=WMR_VISUALIZATION_COLUMNS,
+                                               encoding='ISO-8859-1')
+            gte_wmr_visualization_df = wmr_visualization_df[
+                wmr_visualization_df['TEST_SECTION_ID'].isin(edit_distance_gte_ids)]
+
+            lt_wmr_visualization_df = wmr_visualization_df[
+                wmr_visualization_df['TEST_SECTION_ID'].isin(edit_distance_lt_ids)]
+
+            gte_wmr_file_name = 'edit_distance_gte_' + str(args.visualize_by_edit_distance) + '_' + wmr_file_name
+            lt_wmr_file_name = 'edit_distance_lt_' + str(args.visualize_by_edit_distance) + '_' + wmr_file_name
+
+            gte_num_vs_wmr_save_file_name = 'edit_distance_gte_' + str(
+                args.visualize_by_edit_distance) + '_' + 'num_vs_wmr_' + name_info + 'logdata_visualization'
+
+            lt_num_vs_wmr_save_file_name = 'edit_distance_lt_' + str(
+                args.visualize_by_edit_distance) + '_' + 'num_vs_wmr_' + name_info + 'logdata_visualization'
+
+            show_plot_info(gte_wmr_visualization_df, save_file_name=gte_wmr_file_name.split('.')[0], y_label='WMR')
+            iki_interval_df = calculate_iki_intervals(gte_wmr_visualization_df, y_label='WMR',
+                                                      interval_size=interval_size)
+            plot_wmr_vs_iki(iki_interval_df, save_file_name=gte_wmr_file_name.split('.')[0],
+                            interval_size=interval_size, origin_df=gte_wmr_visualization_df,
+                            label_extra_info=gte_label_extra_info)
+
+            plot_num_vs_wmr(save_file_name=gte_num_vs_wmr_save_file_name,
+                            interval_size=0.005, origin_df=gte_wmr_visualization_df,
+                            label_extra_info=gte_label_extra_info)
+
+            show_plot_info(lt_wmr_visualization_df, save_file_name=lt_wmr_file_name.split('.')[0], y_label='WMR')
+            iki_interval_df = calculate_iki_intervals(lt_wmr_visualization_df, y_label='WMR',
+                                                      interval_size=interval_size)
+            plot_wmr_vs_iki(iki_interval_df, save_file_name=lt_wmr_file_name.split('.')[0],
+                            interval_size=interval_size, origin_df=lt_wmr_visualization_df,
+                            label_extra_info=lt_label_extra_info)
+
+            plot_num_vs_wmr(save_file_name=lt_num_vs_wmr_save_file_name,
+                            interval_size=0.005, origin_df=lt_wmr_visualization_df,
+                            label_extra_info=lt_label_extra_info)
+
+        if args.modification:
+            modification_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, modification_file_name),
+                                                        names=MODIFICATION_VISUALIZATION_COLUMNS,
+                                                        encoding='ISO-8859-1')
+
+            gte_modification_visualization_df = modification_visualization_df[
+                modification_visualization_df['TEST_SECTION_ID'].isin(edit_distance_gte_ids)]
+
+            lt_modification_visualization_df = modification_visualization_df[
+                modification_visualization_df['TEST_SECTION_ID'].isin(edit_distance_lt_ids)]
+
+            gte_modification_file_name = 'edit_distance_gte_' + str(
+                args.visualize_by_edit_distance) + '_' + modification_file_name
+            lt_modification_file_name = 'edit_distance_lt_' + str(
+                args.visualize_by_edit_distance) + '_' + modification_file_name
+
+            show_plot_info(gte_modification_visualization_df, save_file_name=modification_file_name.split('.')[0],
+                           y_label='MODIFICATION')
+            iki_interval_df = calculate_iki_intervals(gte_modification_visualization_df,
+                                                      y_label='MODIFICATION', interval_size=interval_size)
+            plot_modification_vs_iki(iki_interval_df, save_file_name=gte_modification_file_name.split('.')[0],
+                                     interval_size=interval_size, origin_df=gte_modification_visualization_df,
+                                     label_extra_info=gte_label_extra_info)
+
+            show_plot_info(lt_modification_visualization_df, save_file_name=modification_file_name.split('.')[0],
+                           y_label='MODIFICATION')
+            iki_interval_df = calculate_iki_intervals(lt_modification_visualization_df,
+                                                      y_label='MODIFICATION', interval_size=interval_size)
+            plot_modification_vs_iki(iki_interval_df, save_file_name=lt_modification_file_name.split('.')[0],
+                                     interval_size=interval_size, origin_df=lt_modification_visualization_df,
+                                     label_extra_info=lt_label_extra_info)
+
+        if ac_file_name and args.ac:
+            ac_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, ac_file_name),
+                                              names=AC_VISUALIZATION_COLUMNS,
+                                              encoding='ISO-8859-1')
+
+            gte_ac_visualization_df = ac_visualization_df[
+                ac_visualization_df['TEST_SECTION_ID'].isin(edit_distance_gte_ids)]
+
+            lt_ac_visualization_df = ac_visualization_df[
+                ac_visualization_df['TEST_SECTION_ID'].isin(edit_distance_lt_ids)]
+
+            gte_ac_file_name = 'edit_distance_gte_' + str(
+                args.visualize_by_edit_distance) + '_' + ac_file_name
+            lt_ac_file_name = 'edit_distance_lt_' + str(
+                args.visualize_by_edit_distance) + '_' + ac_file_name
+
+            show_plot_info(gte_ac_visualization_df, save_file_name=gte_ac_file_name.split('.')[0], y_label='AC')
+            iki_interval_df = calculate_iki_intervals(gte_ac_visualization_df, y_label='AC',
+                                                      interval_size=interval_size)
+            plot_ac_vs_iki(iki_interval_df, save_file_name=gte_ac_file_name.split('.')[0], interval_size=interval_size,
+                           origin_df=gte_ac_visualization_df, label_extra_info=gte_label_extra_info)
+
+            show_plot_info(lt_ac_visualization_df, save_file_name=lt_ac_file_name.split('.')[0], y_label='AC')
+            iki_interval_df = calculate_iki_intervals(lt_ac_visualization_df, y_label='AC',
+                                                      interval_size=interval_size)
+            plot_ac_vs_iki(iki_interval_df, save_file_name=lt_ac_file_name.split('.')[0], interval_size=interval_size,
+                           origin_df=lt_ac_visualization_df, label_extra_info=lt_label_extra_info)
