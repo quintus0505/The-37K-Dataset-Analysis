@@ -6,6 +6,7 @@ from config import logdata_columns, DEFAULT_DATASETS_DIR, DEFAULT_VISUALIZATION_
 import os.path as osp
 import numpy as np
 import Levenshtein
+from tools.string_analysis import *
 
 WMR_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'WORD_COUNT', 'MODIFIED_WORD_COUNT', 'IKI', 'WPM']
 AC_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'WORD_COUNT', 'AC_WORD_COUNT', 'IKI', 'AC']
@@ -27,6 +28,9 @@ class Parse(ABC):
         self.modified_word_count = 0  # word being modified during typing before committed
         self.auto_corrected_word_count = 0  # word being auto-corrected during typing before committed
         self.modification_count = 0  # modification count on char level
+
+        self.uncorrected_error_rate = 0
+        self.corrected_error_rate = 0
 
         self.test_section_count = 0
 
@@ -182,8 +186,9 @@ class Parse(ABC):
                 #     self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['EDIT_DISTANCE'].values[0]
                 sentence_id = self.test_sections_dataframe[
                     self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['SENTENCE_ID'].values[0]
-                target_sentence = self.sentences_dataframe[self.sentences_dataframe['SENTENCE_ID'] == sentence_id]['SENTENCE'].values[
-                    0]
+                target_sentence = \
+                    self.sentences_dataframe[self.sentences_dataframe['SENTENCE_ID'] == sentence_id]['SENTENCE'].values[
+                        0]
                 edit_distance = Levenshtein.distance(committed_sentence, target_sentence)
                 error_rate = self.test_sections_dataframe[
                     self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['ERROR_RATE'].values[0]
@@ -201,6 +206,165 @@ class Parse(ABC):
 
             except:
                 pass
+
+    @staticmethod
+    def compute_if_c_count_for_auto_correction(str1, str2):
+        """
+        :param str1: original string (word)
+        :param str2: auto-corrected string (word)
+        :return:
+        """
+        # Create a matrix to store the distances and matches
+        matrix = [[[0, 0] for _ in range(len(str2) + 1)] for _ in range(len(str1) + 1)]
+
+        # Initialize the first row and column of the matrix
+        for i in range(len(str1) + 1):
+            matrix[i][0] = [i, 0]  # Distance, Matches
+        for j in range(len(str2) + 1):
+            matrix[0][j] = [j, 0]  # Distance, Matches
+
+        # Populate the matrix
+        for i in range(1, len(str1) + 1):
+            for j in range(1, len(str2) + 1):
+                if str1[i - 1] == str2[j - 1]:
+                    cost = 0
+                    matches = matrix[i - 1][j - 1][1] + 1  # Increase matches
+                else:
+                    cost = 1
+                    matches = max(matrix[i - 1][j][1], matrix[i][j - 1][1], matrix[i - 1][j - 1][1])
+
+                # Calculate distances and update matches
+                dist_del = matrix[i - 1][j][0] + 1
+                dist_ins = matrix[i][j - 1][0] + 1
+                dist_sub = matrix[i - 1][j - 1][0] + cost
+
+                min_dist = min(dist_del, dist_ins, dist_sub)
+                matrix[i][j] = [min_dist, matches]
+
+                # Ensure the match count does not decrease
+                if min_dist == dist_sub:
+                    matrix[i][j][1] = max(matrix[i][j][1], matrix[i - 1][j - 1][1])
+
+        # The last element of the matrix contains the distance and the matches
+        distance, matches = matrix[-1][-1]
+        char_count = len(str2)
+        return distance, matches, char_count
+
+    def reformat_input(self, test_section_df):
+        reformatted_input = ""
+        pre_input = ""
+        reformat_if_count = 0
+        reformat_c_count = 0
+        reformat_f_count = 0
+        auto_corrected_word_count = 0
+        for index, row in test_section_df.iterrows():
+            current_input = row['INPUT']
+            if len(current_input) > len(pre_input):
+                if current_input[:len(pre_input)] == pre_input:
+                    # normal typing after last input
+                    reformatted_input += current_input[len(pre_input):]
+                elif current_input[:len(pre_input)].lower() == pre_input.lower():
+                    # first find the low or upper case different and correct it
+                    for i in range(len(pre_input)):
+                        if pre_input[i] != current_input[i]:
+                            # change the reformatted_input[i] to current_input[i]
+                            reformatted_input = reformatted_input[:i] + current_input[i] + reformatted_input[i + 1:]
+                            break
+                    # then add the rest of the input
+                    reformat_if_count += 1
+                    reformat_f_count += 1
+                    reformatted_input += current_input[len(pre_input):]
+                else:
+                    # move the cursor to the middle of the sentence and start typing
+                    for i in range(len(pre_input)):
+                        if pre_input[i] != current_input[i]:
+                            # insert current_input[i] to the reformatted_input at the same position
+                            # TODO: Let's assume that all this action result in correct typing
+                            reformatted_input = reformatted_input[:i] + current_input[i] + reformatted_input[i:]
+                            reformat_if_count += 1
+                            break
+            elif row['ITE_AUTO'] or len(current_input) == len(pre_input):
+                # use auto correction, replace the last word in the reformatted_input
+                # with the last word in the current_input
+                reformatted_input = reformatted_input.rsplit(' ', 1)[0] + ' ' + current_input.rsplit(' ', 1)[1]
+                word_before_modification = pre_input.rsplit(' ', 1)[1]
+                word_after_modification = current_input.rsplit(' ', 1)[1]
+                if_count, c_count, word_count = self.compute_if_c_count_for_auto_correction(word_before_modification,
+                                                                                            word_after_modification)
+                reformat_if_count += if_count
+                reformat_c_count += c_count
+                reformat_f_count += 1
+                auto_corrected_word_count += word_count
+            else:
+                # using backspace to delete
+                # if the backspace is used to delete the last character
+                if len(pre_input) - len(current_input) == 1 and pre_input[:-1] == current_input:
+                    reformatted_input += '<'
+                else:
+                    # move the cursor to the middle of the sentence and use backspace to delete
+                    for i in range(len(pre_input)):
+                        if pre_input[i] != current_input[i]:
+                            reformatted_input = reformatted_input[:i] + '<' + reformatted_input[i:]
+                            reformat_c_count += 1
+                            break
+            pre_input = current_input
+        return reformatted_input, reformat_if_count, reformat_c_count, auto_corrected_word_count, reformat_f_count
+
+    def compute_error_rate_correction(self, full_log_data, ite=None, keyboard=None, custom_logdata_path=None):
+        """
+        Compute the error rate between the committed sentence and the input sentence
+        return corrected error rate, uncorrected error rate, immediate error correction rate and delayed error correction rate
+        :return:
+        """
+        total_correct_count, total_inf_count, total_if_count, total_fix_count = 0, 0, 0, 0
+        self.test_section_count = 0
+        self.load_data(ite=ite, keyboard=keyboard, full_log_data=full_log_data, custom_logdata_path=custom_logdata_path)
+        self.load_test_sections()
+        self.load_sentences()
+        for test_section_id in self.test_section_ids:
+            try:
+                test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
+                if committed_sentence != committed_sentence:
+                    continue
+                sentence_id = self.test_sections_dataframe[
+                    self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['SENTENCE_ID'].values[0]
+                target_sentence = self.sentences_dataframe[self.sentences_dataframe['SENTENCE_ID'] == sentence_id][
+                    'SENTENCE'].values[0]
+                # if the end of the committed sentence is a space or spaces, remove it
+                while committed_sentence[-1] == ' ':
+                    committed_sentence = committed_sentence[:-1]
+                if test_section_id == 7192:
+                    print("test section id: ", test_section_id)
+                reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
+                auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
+                correct_count, inf_count, if_count, fix_count = track_typing_errors(target_sentence,
+                                                                                    reformatted_input)
+                total_correct_count += correct_count + auto_corrected_c_count - auto_corrected_word_count
+                total_inf_count += inf_count
+                total_if_count += if_count + auto_corrected_if_count
+                total_fix_count += fix_count + auto_correct_count
+                self.test_section_count += 1
+                uncorrected_error_rate = inf_count / (correct_count + inf_count + if_count)
+                corrected_error_rate = if_count / (correct_count + inf_count + if_count)
+                if uncorrected_error_rate > 0.25 or corrected_error_rate > 0.25:
+                    print("test_section_count: ", self.test_section_count)
+                    print("test_section_id: ", test_section_id)
+                    print("Corrected error rate: ", corrected_error_rate)
+                    print("Uncorrected error rate: ", uncorrected_error_rate)
+                if self.test_section_count % 1000 == 0:
+                    print("test_section_count: ", self.test_section_count)
+                    print("test_section_id: ", test_section_id)
+                    self.uncorrected_error_rate = total_inf_count / (total_correct_count + total_inf_count + total_if_count)
+                    self.corrected_error_rate = total_if_count / (total_correct_count + total_inf_count + total_if_count)
+                    print("Corrected error rate: ", self.corrected_error_rate)
+                    print("Uncorrected error rate: ", self.uncorrected_error_rate)
+
+            except:
+                pass
+        self.uncorrected_error_rate = total_inf_count / (total_correct_count + total_inf_count + total_if_count)
+        self.corrected_error_rate = total_if_count / (total_correct_count + total_inf_count + total_if_count)
+        print("Corrected error rate: ", self.corrected_error_rate)
+        print("Uncorrected error rate: ", self.uncorrected_error_rate)
 
     def compute_modification(self, full_log_data, ite=None, keyboard=None, custom_logdata_path=None):
         """
@@ -326,13 +490,13 @@ class Parse(ABC):
                 word_modified_flag = [False] * len(committed_sentence.split())
                 if len(committed_sentence.split()) < 3:
                     continue
+                committed_words = committed_sentence.split()
                 for index, row in test_section_df.iterrows():
                     if row['INPUT'] != row['INPUT'] or row['DATA'] != row['DATA'] or row['INPUT'] == ' ' or row[
                         'DATA'] == ' ':
                         continue
                     if row['INPUT'] != committed_sentence[:len(row['INPUT'])]:
                         # compare each character of the input sentence with the committed sentence
-                        committed_words = committed_sentence.split()
                         input_words = row['INPUT'].split()
                         typed_word_count = len(input_words)
                         last_word_index = 0
@@ -455,6 +619,15 @@ def compare_sentences(sentence1, sentence2):
 
 if __name__ == "__main__":
     parser = Parse()
+    reference = "the quick brown fox"
+    typed = "th quix<ck brpown"
+    typed_2 = 'thhe<<e quic<<ckk<<< browwn<<<n foxx<<x'
+    result = 'the qu bron fox'
+    correct_count, inf_count, if_count, fix_count = parser.track_typing_errors(reference, typed_2)
+    print("Correct count: ", correct_count)
+    print("Incorrect-not-fix count: ", inf_count)
+    print("Incorrect fix count: ", if_count)
+    print("fix count: ", fix_count)
     # logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'ac_logdata.csv')
     # parser.compute_wmr(full_log_data=True, ite=None, keyboard='Gboard', custom_logdata_path=logdata_path)
     #

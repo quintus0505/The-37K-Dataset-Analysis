@@ -15,6 +15,7 @@ parser.add_argument("--os", type=str, default=None, help='os type')
 parser.add_argument("--analyze", action="store_true", default=False, help="anylyze the data")
 parser.add_argument("--visualize", action="store_true", default=False, help="visualize the data")
 parser.add_argument("--filter", type=float, default=0, help='filter those test section with iki below this percentage')
+parser.add_argument('--error-rate', action="store_true", default=False, help="compute corrected and uncorrected error rate")
 
 parser.add_argument("--wmr", action="store_true", default=False, help="wmr")
 parser.add_argument("--ac", action="store_true", default=False, help="ac")
@@ -126,6 +127,14 @@ if __name__ == "__main__":
         logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, file_name)
         parser.filter(filter_ratio=filter_ratio, ite=ite_list, keyboard=kbd, save_file_name=save_file_name,
                       load_file_name=logdata_path)
+
+    if args.error_rate:
+        print("computing error rate")
+        name_info, ite_list, kbd, os = get_name_str()
+        file_name = name_info + 'logdata.csv'
+        logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, file_name)
+        parser = Parse()
+        parser.compute_error_rate_correction(full_log_data=True, ite=ite_list, keyboard=kbd, custom_logdata_path=logdata_path)
 
     if args.visualize:
         interval_size = 10
