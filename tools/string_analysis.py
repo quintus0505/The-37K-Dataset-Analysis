@@ -124,18 +124,13 @@ def simplify_typed_text(typed_text):
                 correct_char = list(typed_text[i: i + bsp_count])
                 correct_char_used = [False] * len(correct_char)
                 for j in range(len(correct_char)):
-                    flag = False
-                    for k in range(j, len(correct_char)):
-                        if correct_char[k] == delete_chars[j] and not correct_char_used[k]:
-                            flag = True
-                            correct_char_used[k] = True
-                            break
-                    if not flag:
+                    if delete_chars[j] != correct_char[j]:
                         simplify_text.append(delete_chars[j])
                         simplify_text.append('<')
-                        simplify_text.append(correct_char[j])
+                        # simplify_text.append(correct_char[j])
                 bsp_count = 0
                 delete_chars.clear()
+                simplify_text.append(typed_text[i])
     return ''.join(simplify_text)
 
 
@@ -157,5 +152,10 @@ def track_typing_errors(reference, typed):
 # Example usage
 reference_sentence = "the quick brown"
 typed_text = "th quxck<<<ick brpown"
-# print(simplify_typed_text(typed_text))
+# typed_text = 'Was c<wimedrting <<<<<<<<<<ondering if you and Natalie conce<<ncected ?<<v<?'
+# reference_sentence = "Was wondering if you and Natalie connected?"
+# simplified = simplify_typed_text(typed_text)
+#
+# print(simplified)
+# print(track_typing_errors(reference_sentence, simplified))
 # print(track_typing_errors(reference_sentence, typed_text))

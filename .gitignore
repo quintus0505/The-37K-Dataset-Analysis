@@ -154,7 +154,7 @@ original_data/*csv
 original_data/*xlsx
 original_data/*ipynb
 original_data/*sql
-
+original_data/How_we_type_mobile_dataset_typing_log/
 cleaned_data/
 .idea/
 visualization/

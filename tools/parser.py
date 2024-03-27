@@ -73,15 +73,38 @@ class Parse(ABC):
         if len(test_section_df) == 0:
             return np.nan
 
-        time_list = test_section_df['TIMESTAMP'].values
-        intervals = (test_section_df['TIMESTAMP'] - test_section_df['TIMESTAMP'].shift()).fillna(0)
+        # Copy the DataFrame to avoid SettingWithCopyWarning.
+        df = test_section_df.copy()
+
+        # Add a new column for the previous timestamp.
+        df['PREV_TIMESTAMP'] = df['TIMESTAMP'].shift()
+
+        # Calculate IKI for all rows.
+        df['IKI'] = df['TIMESTAMP'] - df['PREV_TIMESTAMP']
+
+        # Remove the IKI for the first row and non-alphabetic inputs.
+        df.loc[df.index[0], 'IKI'] = np.nan
+        # mean_iki_test = df['IKI'].mean()
+        # non_alpha_iki_mean = df.loc[~df['DATA'].str.isalpha(), 'IKI'].mean()
+
+        df.loc[~df['DATA'].str.isalpha(), 'IKI'] = np.nan
+
+        # Calculate the mean IKI, excluding NaN values.
+        mean_iki = df['IKI'].mean()
+
+        # Calculate the number of words, considering only alphabetic inputs.
         word_num = len(test_section_df.iloc[-1]['INPUT'].split())
-        mean_interval_ms = intervals[1:].mean()
-        total_time = time_list[-1] - time_list[0]
-        if total_time == 0:
-            return mean_interval_ms, np.nan
-        wpm = word_num / (total_time / 1000 / 60)
-        return mean_interval_ms, wpm
+
+        # Calculate the total typing duration.
+        total_time_ms = df['TIMESTAMP'].iloc[-1] - df['TIMESTAMP'].iloc[0]
+
+        if total_time_ms == 0:
+            return mean_iki, np.nan
+
+        # Calculate words per minute.
+        wpm = word_num / (total_time_ms / 1000 / 60)
+
+        return mean_iki, wpm
 
     def load_data(self, ite=None, keyboard=None, full_log_data=True, custom_logdata_path=None):
         if not custom_logdata_path:
@@ -125,8 +148,8 @@ class Parse(ABC):
         if len(committed_sentence) < 4 or committed_sentence != committed_sentence:
             for i in range(2, 5):
                 if len(committed_sentence) < 3:
-                    committed_sentence = test_section_df.iloc[-i]['INPUT']
                     test_section_df = test_section_df.iloc[:-1]
+                    committed_sentence = test_section_df.iloc[-1]['INPUT']
 
         return test_section_df, committed_sentence
 
@@ -259,6 +282,10 @@ class Parse(ABC):
         auto_corrected_word_count = 0
         for index, row in test_section_df.iterrows():
             current_input = row['INPUT']
+            if current_input != current_input:
+                current_input = ''
+            if current_input == pre_input:
+                continue
             if len(current_input) > len(pre_input):
                 if current_input[:len(pre_input)] == pre_input:
                     # normal typing after last input
@@ -286,9 +313,15 @@ class Parse(ABC):
             elif row['ITE_AUTO'] or len(current_input) == len(pre_input):
                 # use auto correction, replace the last word in the reformatted_input
                 # with the last word in the current_input
-                reformatted_input = reformatted_input.rsplit(' ', 1)[0] + ' ' + current_input.rsplit(' ', 1)[1]
-                word_before_modification = pre_input.rsplit(' ', 1)[1]
-                word_after_modification = current_input.rsplit(' ', 1)[1]
+                # if more than one words in the current_input, only consider the last word
+                if len(reformatted_input.split()) > 1:
+                    reformatted_input = reformatted_input.rsplit(' ', 1)[0] + ' ' + current_input.rsplit(' ', 1)[1]
+                    word_before_modification = pre_input.rsplit(' ', 1)[1]
+                    word_after_modification = current_input.rsplit(' ', 1)[1]
+                else:
+                    reformatted_input = current_input
+                    word_before_modification = pre_input
+                    word_after_modification = current_input
                 if_count, c_count, word_count = self.compute_if_c_count_for_auto_correction(word_before_modification,
                                                                                             word_after_modification)
                 reformat_if_count += if_count
@@ -300,6 +333,19 @@ class Parse(ABC):
                 # if the backspace is used to delete the last character
                 if len(pre_input) - len(current_input) == 1 and pre_input[:-1] == current_input:
                     reformatted_input += '<'
+                # find if the last word in the reformatted_input is not the same as the last word in the current_input
+                elif pre_input.rsplit(' ', 1)[1] != current_input.rsplit(' ', 1)[1]:
+                    # replace the last word in the reformatted_input with the last word in the current_input
+                    reformatted_input = reformatted_input.rsplit(' ', 1)[0] + ' ' + current_input.rsplit(' ', 1)[1]
+                    word_before_modification = pre_input.rsplit(' ', 1)[1]
+                    word_after_modification = current_input.rsplit(' ', 1)[1]
+                    if_count, c_count, word_count = self.compute_if_c_count_for_auto_correction(
+                        word_before_modification,
+                        word_after_modification)
+                    reformat_if_count += if_count
+                    reformat_c_count += c_count
+                    reformat_f_count += 1
+                    auto_corrected_word_count += word_count
                 else:
                     # move the cursor to the middle of the sentence and use backspace to delete
                     for i in range(len(pre_input)):
@@ -333,8 +379,8 @@ class Parse(ABC):
                 # if the end of the committed sentence is a space or spaces, remove it
                 while committed_sentence[-1] == ' ':
                     committed_sentence = committed_sentence[:-1]
-                if test_section_id == 7192:
-                    print("test section id: ", test_section_id)
+                # if test_section_id == 2710:
+                #     print("test section id: ", test_section_id)
                 reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
                 auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
                 correct_count, inf_count, if_count, fix_count = track_typing_errors(target_sentence,
@@ -346,16 +392,18 @@ class Parse(ABC):
                 self.test_section_count += 1
                 uncorrected_error_rate = inf_count / (correct_count + inf_count + if_count)
                 corrected_error_rate = if_count / (correct_count + inf_count + if_count)
-                if uncorrected_error_rate > 0.25 or corrected_error_rate > 0.25:
-                    print("test_section_count: ", self.test_section_count)
-                    print("test_section_id: ", test_section_id)
-                    print("Corrected error rate: ", corrected_error_rate)
-                    print("Uncorrected error rate: ", uncorrected_error_rate)
+                # if uncorrected_error_rate > 0.25 or corrected_error_rate > 0.25:
+                #     print("test_section_count: ", self.test_section_count)
+                #     print("test_section_id: ", test_section_id)
+                #     print("Corrected error rate: ", corrected_error_rate)
+                #     print("Uncorrected error rate: ", uncorrected_error_rate)
                 if self.test_section_count % 1000 == 0:
                     print("test_section_count: ", self.test_section_count)
                     print("test_section_id: ", test_section_id)
-                    self.uncorrected_error_rate = total_inf_count / (total_correct_count + total_inf_count + total_if_count)
-                    self.corrected_error_rate = total_if_count / (total_correct_count + total_inf_count + total_if_count)
+                    self.uncorrected_error_rate = total_inf_count / (
+                                total_correct_count + total_inf_count + total_if_count)
+                    self.corrected_error_rate = total_if_count / (
+                                total_correct_count + total_inf_count + total_if_count)
                     print("Corrected error rate: ", self.corrected_error_rate)
                     print("Uncorrected error rate: ", self.uncorrected_error_rate)
 
