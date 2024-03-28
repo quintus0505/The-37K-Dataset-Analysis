@@ -48,6 +48,10 @@ python main.py --filter 0.8 --auto-correct --keyboard Gboard
 
 ```
 
+```python
+python main.py --filter --iki 345.5 --rebuild
+```
+
 ### Analyzing the dataset
 
 ```python

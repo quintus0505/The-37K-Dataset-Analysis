@@ -7,6 +7,8 @@ import os.path as osp
 import numpy as np
 import Levenshtein
 from tools.string_analysis import *
+import Levenshtein as lev
+from tools.string_functions import *
 
 WMR_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'WORD_COUNT', 'MODIFIED_WORD_COUNT', 'IKI', 'WPM']
 AC_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'WORD_COUNT', 'AC_WORD_COUNT', 'IKI', 'AC']
@@ -29,8 +31,8 @@ class Parse(ABC):
         self.auto_corrected_word_count = 0  # word being auto-corrected during typing before committed
         self.modification_count = 0  # modification count on char level
 
-        self.uncorrected_error_rate = 0
-        self.corrected_error_rate = 0
+        self.uncorrected_error_rates = []
+        self.corrected_error_rates = []
 
         self.test_section_count = 0
 
@@ -71,28 +73,41 @@ class Parse(ABC):
 
     def compute_iki_wpm(self, test_section_df):
         if len(test_section_df) == 0:
-            return np.nan
+            return np.nan, np.nan
 
         # Copy the DataFrame to avoid SettingWithCopyWarning.
         df = test_section_df.copy()
 
+        # replace the nan in INPUT as empty string
+
+        df['INPUT'] = df['INPUT'].fillna('')
         # Add a new column for the previous timestamp.
         df['PREV_TIMESTAMP'] = df['TIMESTAMP'].shift()
-
+        df['PREV_INPUT'] = df['INPUT'].shift()
+        df.loc[df.index[0], 'PREV_INPUT'] = ''
         # Calculate IKI for all rows.
         df['IKI'] = df['TIMESTAMP'] - df['PREV_TIMESTAMP']
 
-        # Remove the IKI for the first row and non-alphabetic inputs.
+        # Set the IKI for the first row to NaN.
         df.loc[df.index[0], 'IKI'] = np.nan
-        # mean_iki_test = df['IKI'].mean()
-        # non_alpha_iki_mean = df.loc[~df['DATA'].str.isalpha(), 'IKI'].mean()
 
-        df.loc[~df['DATA'].str.isalpha(), 'IKI'] = np.nan
+        # Skip rows where DATA is a space when computing the IKI mean.
+        is_space = (df['DATA'] == ' ')
+        df.loc[is_space, 'IKI'] = np.nan
+
+        # Skip rows where not len(df['INPUT']) - len(df['PREV_INPUT']) == 1 and df['PREV_INPUT'] != df['INPUT'][:-1]
+        # when computing the IKI mean, also do not consider the first row, start from the second row
+        for idx in df.index[1:]:
+            current_input = df.at[idx, 'INPUT']
+            prev_input = df.at[idx, 'PREV_INPUT']
+            # Check if the current input is a direct continuation of the previous input
+            if not (prev_input == current_input[:-1] or prev_input.startswith(current_input)):
+                df.at[idx, 'IKI'] = np.nan
 
         # Calculate the mean IKI, excluding NaN values.
-        mean_iki = df['IKI'].mean()
+        mean_iki = df.loc[~is_space, 'IKI'].mean()
 
-        # Calculate the number of words, considering only alphabetic inputs.
+        # Calculate the number of words, considering only the last entry and ignoring spaces.
         word_num = len(test_section_df.iloc[-1]['INPUT'].split())
 
         # Calculate the total typing duration.
@@ -150,6 +165,9 @@ class Parse(ABC):
                 if len(committed_sentence) < 3:
                     test_section_df = test_section_df.iloc[:-1]
                     committed_sentence = test_section_df.iloc[-1]['INPUT']
+        while committed_sentence[-1] == ' ':
+            committed_sentence = committed_sentence[:-1]
+            test_section_df.iloc[-1]['INPUT'] = committed_sentence
 
         return test_section_df, committed_sentence
 
@@ -158,10 +176,12 @@ class Parse(ABC):
         get age vs iki based on the test section id
         :return:
         """
+        iter_count = 0
         self.test_section_count = 0
         self.load_data(ite=ite, keyboard=keyboard, full_log_data=full_log_data, custom_logdata_path=custom_logdata_path)
         self.load_participants(ite=ite, keyboard=keyboard)
         for test_section_id in self.test_section_ids:
+            iter_count += 1
             try:
                 test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
 
@@ -178,7 +198,7 @@ class Parse(ABC):
 
                 self.age_visualization_df = self.age_visualization_df.append(
                     pd.DataFrame([[participant_id, test_section_id, iki, age]], columns=AGE_VISUALIZATION_COLUMNS))
-                if self.test_section_count % 1000 == 0:
+                if iter_count % 1000 == 0:
                     print('IKI: ', iki)
                     print('AGE: ', age)
                     print("test_section_count: ", self.test_section_count)
@@ -191,11 +211,13 @@ class Parse(ABC):
         Compute the edit distance between the committed sentence and the input sentence
         :return:
         """
+        iter_count = 0
         self.test_section_count = 0
         self.load_data(ite=ite, keyboard=keyboard, full_log_data=full_log_data, custom_logdata_path=custom_logdata_path)
         self.load_test_sections()
         self.load_sentences()
         for test_section_id in self.test_section_ids:
+            iter_count += 1
             try:
                 test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
                 if committed_sentence != committed_sentence:
@@ -221,7 +243,7 @@ class Parse(ABC):
                           iki, error_rate]],
                         columns=EDIT_DISTANCE_VISUALIZATION_COLUMNS))
 
-                if self.test_section_count % 1000 == 0:
+                if iter_count % 1000 == 0:
                     print('IKI: ', iki)
                     print("Edit distance: ", edit_distance)
                     print("test_section_count: ", self.test_section_count)
@@ -279,6 +301,7 @@ class Parse(ABC):
         reformat_if_count = 0
         reformat_c_count = 0
         reformat_f_count = 0
+        bsp_count = 0
         auto_corrected_word_count = 0
         for index, row in test_section_df.iterrows():
             current_input = row['INPUT']
@@ -314,7 +337,14 @@ class Parse(ABC):
                 # use auto correction, replace the last word in the reformatted_input
                 # with the last word in the current_input
                 # if more than one words in the current_input, only consider the last word
-                if len(reformatted_input.split()) > 1:
+                if not row['ITE_AUTO'] and current_input[:-1] == pre_input[:-1]:
+                    # replace the last character in the reformatted_input with the last character in the current_input
+                    reformatted_input = reformatted_input[:len(current_input) + bsp_count - 2] + current_input[-1] + \
+                                        reformatted_input[len(current_input) + bsp_count - 1:]
+                    reformat_if_count += 1
+                    pre_input = current_input
+                    continue
+                elif len(reformatted_input.split()) > 1:
                     reformatted_input = reformatted_input.rsplit(' ', 1)[0] + ' ' + current_input.rsplit(' ', 1)[1]
                     word_before_modification = pre_input.rsplit(' ', 1)[1]
                     word_after_modification = current_input.rsplit(' ', 1)[1]
@@ -333,6 +363,7 @@ class Parse(ABC):
                 # if the backspace is used to delete the last character
                 if len(pre_input) - len(current_input) == 1 and pre_input[:-1] == current_input:
                     reformatted_input += '<'
+                    bsp_count += 1
                 # find if the last word in the reformatted_input is not the same as the last word in the current_input
                 elif pre_input.rsplit(' ', 1)[1] != current_input.rsplit(' ', 1)[1]:
                     # replace the last word in the reformatted_input with the last word in the current_input
@@ -352,6 +383,7 @@ class Parse(ABC):
                         if pre_input[i] != current_input[i]:
                             reformatted_input = reformatted_input[:i] + '<' + reformatted_input[i:]
                             reformat_c_count += 1
+                            bsp_count += 1
                             break
             pre_input = current_input
         return reformatted_input, reformat_if_count, reformat_c_count, auto_corrected_word_count, reformat_f_count
@@ -364,10 +396,12 @@ class Parse(ABC):
         """
         total_correct_count, total_inf_count, total_if_count, total_fix_count = 0, 0, 0, 0
         self.test_section_count = 0
+        iter_count = 0
         self.load_data(ite=ite, keyboard=keyboard, full_log_data=full_log_data, custom_logdata_path=custom_logdata_path)
         self.load_test_sections()
         self.load_sentences()
         for test_section_id in self.test_section_ids:
+            iter_count += 1
             try:
                 test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
                 if committed_sentence != committed_sentence:
@@ -376,15 +410,28 @@ class Parse(ABC):
                     self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['SENTENCE_ID'].values[0]
                 target_sentence = self.sentences_dataframe[self.sentences_dataframe['SENTENCE_ID'] == sentence_id][
                     'SENTENCE'].values[0]
-                # if the end of the committed sentence is a space or spaces, remove it
-                while committed_sentence[-1] == ' ':
-                    committed_sentence = committed_sentence[:-1]
-                # if test_section_id == 2710:
-                #     print("test section id: ", test_section_id)
+
                 reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
                 auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
-                correct_count, inf_count, if_count, fix_count = track_typing_errors(target_sentence,
-                                                                                    reformatted_input)
+                flagged_IS = flag_input_stream(reformatted_input)
+
+                _, MSD = min_string_distance(target_sentence, committed_sentence)
+
+                alignments = []
+
+                align(target_sentence, committed_sentence, MSD, len(target_sentence), len(committed_sentence), "", "",
+                      alignments)
+
+                all_triplets = stream_align(flagged_IS, alignments)
+                all_edited_triplets = assign_position_values(all_triplets)
+                all_error_lists = error_detection(all_edited_triplets)
+                lev_distance = lev.distance(target_sentence, committed_sentence)
+                for error_list in all_error_lists:
+                    inf_count, if_count, correct_count, fix_count = count_component(error_list, verbose=False)
+                    if inf_count == lev_distance:
+                        break
+                # correct_count, inf_count, if_count, fix_count = track_typing_errors(target_sentence,
+                #                                                                     reformatted_input)
                 total_correct_count += correct_count + auto_corrected_c_count - auto_corrected_word_count
                 total_inf_count += inf_count
                 total_if_count += if_count + auto_corrected_if_count
@@ -392,36 +439,39 @@ class Parse(ABC):
                 self.test_section_count += 1
                 uncorrected_error_rate = inf_count / (correct_count + inf_count + if_count)
                 corrected_error_rate = if_count / (correct_count + inf_count + if_count)
+
+                self.corrected_error_rates.append(corrected_error_rate)
+                self.uncorrected_error_rates.append(uncorrected_error_rate)
                 # if uncorrected_error_rate > 0.25 or corrected_error_rate > 0.25:
                 #     print("test_section_count: ", self.test_section_count)
                 #     print("test_section_id: ", test_section_id)
                 #     print("Corrected error rate: ", corrected_error_rate)
                 #     print("Uncorrected error rate: ", uncorrected_error_rate)
-                if self.test_section_count % 1000 == 0:
+                if iter_count % 1000 == 0:
                     print("test_section_count: ", self.test_section_count)
                     print("test_section_id: ", test_section_id)
-                    self.uncorrected_error_rate = total_inf_count / (
-                                total_correct_count + total_inf_count + total_if_count)
-                    self.corrected_error_rate = total_if_count / (
-                                total_correct_count + total_inf_count + total_if_count)
-                    print("Corrected error rate: ", self.corrected_error_rate)
-                    print("Uncorrected error rate: ", self.uncorrected_error_rate)
+                    print("Corrected error rate mean: ", np.mean(self.corrected_error_rates))
+                    print("Corrected error rate std: ", np.std(self.corrected_error_rates))
+                    print("Uncorrected error rate mean: ", np.mean(self.uncorrected_error_rates))
+                    print("Uncorrected error rate std: ", np.std(self.uncorrected_error_rates))
 
             except:
                 pass
-        self.uncorrected_error_rate = total_inf_count / (total_correct_count + total_inf_count + total_if_count)
-        self.corrected_error_rate = total_if_count / (total_correct_count + total_inf_count + total_if_count)
-        print("Corrected error rate: ", self.corrected_error_rate)
-        print("Uncorrected error rate: ", self.uncorrected_error_rate)
+        print("Corrected error rate mean: ", np.mean(self.corrected_error_rates))
+        print("Corrected error rate std: ", np.std(self.corrected_error_rates))
+        print("Uncorrected error rate mean: ", np.mean(self.uncorrected_error_rates))
+        print("Uncorrected error rate std: ", np.std(self.uncorrected_error_rates))
 
     def compute_modification(self, full_log_data, ite=None, keyboard=None, custom_logdata_path=None):
         """
         Compute the modification ratio on char level
         :return:
         """
+        iter_count = 0
         self.test_section_count = 0
         self.load_data(ite=ite, keyboard=keyboard, full_log_data=full_log_data, custom_logdata_path=custom_logdata_path)
         for test_section_id in self.test_section_ids:
+            iter_count += 1
             try:
                 test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
 
@@ -454,7 +504,11 @@ class Parse(ABC):
                                 modification_count += 1
                                 break
                     pre_input = current_input
-                iki, wpm = self.compute_iki_wpm(test_section_df)
+                try:
+                    iki, wpm = self.compute_iki_wpm(test_section_df)
+                except:
+                    iki, wpm = np.nan, np.nan
+                    iki, wpm = self.compute_iki_wpm(test_section_df)
                 self.test_section_count += 1
                 participant_id = self.test_sections_dataframe[
                     self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['PARTICIPANT_ID'].values[0]
@@ -467,7 +521,7 @@ class Parse(ABC):
                         [[participant_id, test_section_id, committed_char_count, modification_count, iki, wpm]],
                         columns=MODIFICATION_VISUALIZATION_COLUMNS))
 
-                if self.test_section_count % 1000 == 0:
+                if iter_count % 1000 == 0:
                     print('IKI: ', iki)
                     print('WPM: ', wpm)
                     print("Modification ratio: ", self.modification_count / self.char_count)
@@ -484,8 +538,10 @@ class Parse(ABC):
         :return:
         """
         self.test_section_count = 0
+        iter_count = 0
         self.load_data(ite=ite, keyboard=keyboard, full_log_data=full_log_data, custom_logdata_path=custom_logdata_path)
         for test_section_id in self.test_section_ids:
+            iter_count += 1
             try:
                 test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
 
@@ -511,7 +567,7 @@ class Parse(ABC):
                 self.ac_visualization_df = self.ac_visualization_df.append(
                     pd.DataFrame([[participant_id, test_section_id, world_count, auto_corrected_word_count, iki, wpm]],
                                  columns=AC_VISUALIZATION_COLUMNS))
-                if self.test_section_count % 1000 == 0:
+                if iter_count % 1000 == 0:
                     print('IKI: ', iki)
                     print('WPM: ', wpm)
                     print("Auto-corrected ratio: ", self.auto_corrected_word_count / self.word_count)
@@ -529,8 +585,10 @@ class Parse(ABC):
         :return:
         """
         self.test_section_count = 0
+        iter_count = 0
         self.load_data(ite=ite, keyboard=keyboard, full_log_data=full_log_data, custom_logdata_path=custom_logdata_path)
         for test_section_id in self.test_section_ids:
+            iter_count += 1
             try:
                 test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
 
@@ -563,8 +621,11 @@ class Parse(ABC):
                             for j in range(len(input_words[last_word_index])):
                                 if input_words[last_word_index][j] != committed_words[last_word_index][j]:
                                     word_modified_flag[last_word_index] = True
-                iki, wpm = self.compute_iki_wpm(test_section_df)
-
+                try:
+                    iki, wpm = self.compute_iki_wpm(test_section_df)
+                except:
+                    iki, wpm = 0, 0
+                    iki, wpm = self.compute_iki_wpm(test_section_df)
                 self.test_section_count += 1
                 test_section_word_count = len(committed_sentence.split())
                 test_section_modified_word_count = sum(word_modified_flag)
@@ -579,7 +640,7 @@ class Parse(ABC):
                 self.iki_wmr_visualization_df = self.iki_wmr_visualization_df.append(
                     pd.DataFrame([[participant_id, test_section_id, test_section_word_count,
                                    test_section_modified_word_count, iki, wpm]], columns=WMR_VISUALIZATION_COLUMNS))
-                if self.test_section_count % 1000 == 0:
+                if iter_count % 1000 == 0:
                     print('IKI: ', iki)
                     print('WPM: ', wpm)
                     print("Word Modified Ratio (WMR): ", self.modified_word_count / self.word_count)
@@ -592,11 +653,13 @@ class Parse(ABC):
 
         print("Word Modified Ratio (WMR): ", self.modified_word_count / self.word_count)
 
-    def filter(self, ite=None, keyboard=None, filter_ratio=0.5, save_file_name=None, load_file_name=None):
+    def filter_percentage(self, ite=None, keyboard=None, filter_ratio=0.5, save_file_name=None, load_file_name=None):
+        iter_count = 0
         self.test_section_count = 0
         self.load_data(ite=ite, keyboard=keyboard, custom_logdata_path=load_file_name)
         temp_df = pd.DataFrame(columns=['PARTICIPANT_ID', 'TEST_SECTION_ID', 'IKI'])
         for test_section_id in self.test_section_ids:
+            iter_count += 1
             try:
                 test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
 
@@ -637,6 +700,67 @@ class Parse(ABC):
         print("Number of unique participants after filtering: ", len(temp_df['PARTICIPANT_ID'].unique()))
 
         self.logdata_dataframe.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, save_file_name), index=False, header=False)
+
+    def filter_iki(self, ite=None, keyboard=None, filter_iki=200, save_file_name=None, load_file_name=None,
+                   wmr_file_name=None, threshold=1.0, wmr_df=None):
+        iter_count = 0
+        self.test_section_count = 0
+        self.load_data(ite=ite, keyboard=keyboard, custom_logdata_path=load_file_name)
+        # load the wmr visualization data
+        if wmr_df is None:
+            wmr_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name),
+                                 names=WMR_VISUALIZATION_COLUMNS,
+                                 encoding='ISO-8859-1')
+        # get the test section id with iki around the filter_iki, wmr_df iki should > filter_iki - 1 and < filter_iki + 1
+        test_section_ids = wmr_df[(wmr_df['IKI'] > filter_iki - threshold) & (wmr_df['IKI'] < filter_iki + threshold)][
+            'TEST_SECTION_ID']
+        # remain those rows in self.logdata_dataframe with the same test section id
+
+        # filter the logdata dataframe with the test section ids and save the filtered data
+        self.logdata_dataframe = self.logdata_dataframe[
+            self.logdata_dataframe['TEST_SECTION_ID'].isin(test_section_ids)]
+        self.logdata_dataframe.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, save_file_name), index=False, header=False)
+        print("Number of unique test sections after filtering: ",
+              len(self.logdata_dataframe['TEST_SECTION_ID'].unique()))
+
+    def rebuild_typing(self, wmr_df=None, rebuild_save_file_name=None, filtered_logdata_save_file_name=None):
+        rebuild_columns = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'REFERENCE_SENTENCE', 'TYPED_SENTENCE',
+                           'COMMITTED_SENTENCE', 'WMR']
+        rebuild_df = pd.DataFrame(columns=rebuild_columns)
+        self.load_test_sections()
+        self.load_sentences()
+        test_section_ids = self.logdata_dataframe['TEST_SECTION_ID'].unique()
+        for test_section_id in test_section_ids:
+            try:
+                participant_id = self.test_sections_dataframe[
+                    self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['PARTICIPANT_ID'].values[0]
+                test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
+                if committed_sentence != committed_sentence:
+                    continue
+                sentence_id = self.test_sections_dataframe[
+                    self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['SENTENCE_ID'].values[0]
+                reference_sentence = self.sentences_dataframe[
+                    self.sentences_dataframe['SENTENCE_ID'] == sentence_id]['SENTENCE'].values[0]
+                reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
+                auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
+                wmr = wmr_df[wmr_df['TEST_SECTION_ID'] == test_section_id]['MODIFIED_WORD_COUNT'].values[0] / \
+                      wmr_df[wmr_df['TEST_SECTION_ID'] == test_section_id]['WORD_COUNT'].values[0]
+                rebuild_df = rebuild_df.append(
+                    pd.DataFrame([[participant_id, test_section_id, reference_sentence,
+                                   reformatted_input, committed_sentence, wmr]], columns=rebuild_columns))
+            except:
+                print("Error in test section id: ", test_section_id)
+                # remove the test section id from the filtered logdata
+                self.logdata_dataframe = self.logdata_dataframe[
+                    self.logdata_dataframe['TEST_SECTION_ID'] != test_section_id]
+
+        rebuild_df.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, rebuild_save_file_name), index=False, header=True)
+        self.logdata_dataframe.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, filtered_logdata_save_file_name),
+                                      index=False,
+                                      header=False)
+        print("Unique test sections after rebuilding: ", len(rebuild_df['TEST_SECTION_ID'].unique()))
+        print("Mean WMR: ", rebuild_df['WMR'].mean())
+        print("Number of sentences with no modification: ", rebuild_df[rebuild_df['WMR'] == 0].shape[0])
 
 
 def compare_sentences(sentence1, sentence2):

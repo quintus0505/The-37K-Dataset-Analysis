@@ -150,8 +150,8 @@ def track_typing_errors(reference, typed):
 
 
 # Example usage
-reference_sentence = "the quick brown"
-typed_text = "th quxck<<<ick brpown"
+# reference_sentence = "the quick brown"
+# typed_text = "th quxck<<<ick brpown"
 # typed_text = 'Was c<wimedrting <<<<<<<<<<ondering if you and Natalie conce<<ncected ?<<v<?'
 # reference_sentence = "Was wondering if you and Natalie connected?"
 # simplified = simplify_typed_text(typed_text)

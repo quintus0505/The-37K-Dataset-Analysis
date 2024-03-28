@@ -4,6 +4,9 @@ import os
 from config import DEFAULT_ROOT_DIR
 from tools.parser import Parse
 from tools.string_analysis import *
+from tools.string_functions import *
+import Levenshtein as lev
+
 HOW_WE_TYPE_DIR = osp.join(DEFAULT_ROOT_DIR, 'original_data', 'How_we_type_mobile_dataset_typing_log')
 LOG_DIR = osp.join(HOW_WE_TYPE_DIR, 'Typing_log')
 
@@ -12,7 +15,7 @@ sentences_columns = ['SENTENCE_ID', 'SENTENCE']
 # systime	id	block	sentence_n	trialtime	event	layout	message	touchx	touchy
 original_log_columns = ['systime', 'id', 'block', 'SENTENCE_ID', 'trialtime', 'DATA', 'layout', 'INPUT', 'touchx',
                         'touchy']
-used_log_columns = [ 'id', 'block', 'SENTENCE_ID', 'DATA', 'INPUT']
+used_log_columns = ['id', 'block', 'SENTENCE_ID', 'DATA', 'INPUT']
 
 
 def load_sentences_df():
@@ -28,7 +31,7 @@ def load_log_df():
     log_df = None
     selected_columns_id = [original_log_columns.index(col) for col in used_log_columns if col in original_log_columns]
     for file in os.listdir(LOG_DIR):
-        if file.endswith("2.csv"):
+        if file.endswith("1.csv"):
             file_path = osp.join(LOG_DIR, file)
             # only use 'SENTENCE_ID', 'DATA' and 'INPUT'
             df = pd.read_csv(file_path, names=original_log_columns, usecols=selected_columns_id)
@@ -57,47 +60,95 @@ def get_test_sections_df(test_section_id):
 if __name__ == '__main__':
     sentences_df = load_sentences_df()
     log_df = load_log_df()
-
+    iter_count = 0
     parser = Parse()
     test_section_ids = log_df['TEST_SECTION_ID'].unique()
     total_correct_count, total_inf_count, total_if_count, total_fix_count = 0, 0, 0, 0
     test_section_count = 0
+    total_char_count = 0
+    corrected_error_rates = []
+    uncorrected_error_rates = []
     for test_section_id in test_section_ids:
         # if test_section_id == 141:
         #     print("test_section_id: ", test_section_id)
+        iter_count += 1
         try:
+            # if test_section_id == 339:
+            #     print("test_section_id: ", test_section_id)
             test_section_df, committed_sentence = get_test_sections_df(test_section_id)
             sentence_id = int(test_section_df['SENTENCE_ID'].iloc[0])
             target_sentence = sentences_df[sentences_df['SENTENCE_ID'] == sentence_id]['SENTENCE'].iloc[0]
-            while committed_sentence[-1] == ' ':
-                committed_sentence = committed_sentence[:-1]
+            # while committed_sentence[-1] == ' ':
+            #     committed_sentence = committed_sentence[:-1]
             reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
             auto_corrected_word_count, auto_correct_count = parser.reformat_input(test_section_df)
-            correct_count, inf_count, if_count, fix_count = track_typing_errors(target_sentence,
-                                                                                reformatted_input)
+            # reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
+            # auto_corrected_word_count, auto_correct_count = get_input_stream(test_section_df)
+            flagged_IS = flag_input_stream(reformatted_input)
+            # print("Phrase Details:")
+            # print("Flags: {}\nMoves: {}\nIS   : {}\n".format(*flagged_IS))
+            unique_transposition_sets = []
+            _, MSD = min_string_distance(target_sentence, committed_sentence)
+
+            alignments = []
+
+            align(target_sentence, committed_sentence, MSD, len(target_sentence), len(committed_sentence), "", "",
+                  alignments)
+
+            all_triplets = stream_align(flagged_IS, alignments)
+            all_edited_triplets = assign_position_values(all_triplets)
+            all_error_lists = error_detection(all_edited_triplets)
+            lev_distance = lev.distance(target_sentence, committed_sentence)
+            for error_list in all_error_lists:
+                inf_count, if_count, correct_count, fix_count = count_component(error_list, verbose=False)
+                if inf_count == lev_distance:
+                    break
+            Target = target_sentence
+            Typed = committed_sentence
+            Reformatted = reformatted_input
+            if lev_distance != inf_count:
+                print("lev_distance: ", lev_distance)
+                print("inf_count: ", inf_count)
+                print("test_section_id: ", test_section_id)
+                continue
+            # inf_count = lev_distance
+            INF = inf_count
+            IF = if_count
+            C = correct_count
             total_correct_count += correct_count + auto_corrected_c_count - auto_corrected_word_count
             total_inf_count += inf_count
             total_if_count += if_count + auto_corrected_if_count
             total_fix_count += fix_count + auto_correct_count
             test_section_count += 1
-            uncorrected_error_rate = inf_count / (correct_count + inf_count + if_count)
-            corrected_error_rate = if_count / (correct_count + inf_count + if_count)
+            # uncorrected_error_rate = inf_count / len(target_sentence)
+            uncorrected_error_rate = inf_count / (inf_count + if_count + correct_count)
+            corrected_error_rate = if_count / (inf_count + if_count + correct_count)
+
+            corrected_error_rates.append(corrected_error_rate)
+            uncorrected_error_rates.append(uncorrected_error_rate)
             # if uncorrected_error_rate > 0.25 or corrected_error_rate > 0.25:
             #     print("test_section_count: ", self.test_section_count)
             #     print("test_section_id: ", test_section_id)
             #     print("Corrected error rate: ", corrected_error_rate)
             #     print("Uncorrected error rate: ", uncorrected_error_rate)
-            if test_section_count % 1000 == 0:
+            total_char_count += len(target_sentence)
+            if iter_count % 1000 == 0:
                 print("test_section_count: ", test_section_count)
                 print("test_section_id: ", test_section_id)
-                uncorrected_error_rate = total_inf_count / (total_correct_count + total_inf_count + total_if_count)
+                uncorrected_error_rate = total_inf_count / len(target_sentence)
                 corrected_error_rate = total_if_count / (total_correct_count + total_inf_count + total_if_count)
                 print("Corrected error rate: ", corrected_error_rate)
                 print("Uncorrected error rate: ", uncorrected_error_rate)
 
         except:
             pass
-    uncorrected_error_rate = total_inf_count / (total_correct_count + total_inf_count + total_if_count)
-    corrected_error_rate = total_if_count / (total_correct_count + total_inf_count + total_if_count)
+    # uncorrected_error_rate = total_inf_count / total_char_count
+    # corrected_error_rate = total_if_count / (total_correct_count + total_inf_count + total_if_count)
+    uncorrected_error_rate = np.mean(uncorrected_error_rates)
+    corrected_error_rate = np.mean(corrected_error_rates)
     print("Corrected error rate: ", corrected_error_rate)
+    print("Corrected error rate std: ", np.std(corrected_error_rates))
     print("Uncorrected error rate: ", uncorrected_error_rate)
+    print("Uncorrected error rate std: ", np.std(uncorrected_error_rates))
+    print("Selected test section count: ", test_section_count)
+    print("Total test section count: ", iter_count)

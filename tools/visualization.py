@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def calculate_iki_intervals(df, interval_size=10, y_label='WMR', intervals=(125, 1045)):
+def calculate_iki_intervals(df, interval_size=10, y_label='WMR', intervals=(95, 755)):
     # Define the intervals for IKI
     intervals = np.arange(intervals[0], intervals[1], interval_size)
     df['IKI_interval'] = pd.cut(df['IKI'], bins=intervals, right=False)
@@ -18,6 +18,8 @@ def calculate_iki_intervals(df, interval_size=10, y_label='WMR', intervals=(125,
     print("75% quantile (bottom 75% cutoff) IKI: {}".format(df['IKI'].quantile(0.75)))
 
     print(df['IKI'].quantile(0.99))
+    # print the mean of the IKI
+    print("Mean IKI: {}".format(df['IKI'].mean()))
     # remove the bottom 1% data from df
     df = df[df['IKI'] < df['IKI'].quantile(0.99)]
 
@@ -86,7 +88,7 @@ def calculate_iki_intervals(df, interval_size=10, y_label='WMR', intervals=(125,
     return grouped.reset_index(name=reset_index_name)
 
 
-def plot_age_vs_iki(age_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info=''):
+def plot_age_vs_iki(age_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info='', visualize_mean=False):
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_75 = origin_df['IKI'].quantile(0.75)
     # Convert interval to string and get the midpoint for the label
@@ -140,7 +142,7 @@ def plot_age_vs_iki(age_intervals_df, save_file_name=None, origin_df=None, inter
 
 
 # Plotting function for WMR vs IKI
-def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info=''):
+def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info='', visualize_mean=False):
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_50 = origin_df['IKI'].quantile(0.5)
     iki_75 = origin_df['IKI'].quantile(0.75)
@@ -165,7 +167,7 @@ def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, origin_df=None, inter
     plt.xticks(ticks=midpoints, labels=['' if x % (500 / interval_size) != 0 else str(x) for x in midpoints])
 
     # Set the y-axis to start from 5.5
-    y_bottom = 5.5
+    y_bottom = 3.5
     y_top = 27.5
     plt.yticks(ticks=np.arange(y_bottom, y_top, 1.0),
                labels=[str(x) for x in np.arange(y_bottom, y_top, 1.0)])
@@ -174,8 +176,9 @@ def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, origin_df=None, inter
     plt.xticks(rotation=90)
 
     # Draw red horizontal lines for avg
-    plt.axhline(y=avg, color='red', linestyle='--', label='Avg')
-    plt.text(100, avg * 1.05, f'Avg: {avg:.2f}', color='black')
+    if visualize_mean:
+        plt.axhline(y=avg, color='red', linestyle='--', label='Avg')
+        plt.text(100, avg * 1.05, f'Avg: {avg:.2f}', color='black')
 
     # # Draw red vertical lines for 25% and 75% IKI
     # plt.axvline(x=iki_25, color='red', linestyle='--', label='25% IKI')
@@ -208,7 +211,7 @@ def plot_wmr_vs_iki(wmr_intervals_df, save_file_name=None, origin_df=None, inter
 
 
 def plot_modification_vs_iki(modification_intervals_df, save_file_name=None, origin_df=None, interval_size=10,
-                             label_extra_info=''):
+                             label_extra_info='', visualize_mean=False):
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_75 = origin_df['IKI'].quantile(0.75)
 
@@ -242,8 +245,9 @@ def plot_modification_vs_iki(modification_intervals_df, save_file_name=None, ori
     plt.xticks(rotation=90)
 
     # Draw red horizontal lines for avg
-    plt.axhline(y=avg, color='red', linestyle='--', label='Avg')
-    plt.text(100, avg * 1.05, f'Avg: {avg:.2f}', color='black')
+    if visualize_mean:
+        plt.axhline(y=avg, color='red', linestyle='--', label='Avg')
+        plt.text(100, avg * 1.05, f'Avg: {avg:.2f}', color='black')
 
     # Draw red vertical lines for 25% and 75% IKI
     # plt.axvline(x=iki_25, color='red', linestyle='--', label='25% IKI')
@@ -276,7 +280,7 @@ def plot_modification_vs_iki(modification_intervals_df, save_file_name=None, ori
     plt.show()
 
 
-def plot_ac_vs_iki(ac_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info=''):
+def plot_ac_vs_iki(ac_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info='', visualize_mean=False):
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_75 = origin_df['IKI'].quantile(0.75)
     # Convert interval to string and get the midpoint for the label
@@ -305,8 +309,9 @@ def plot_ac_vs_iki(ac_intervals_df, save_file_name=None, origin_df=None, interva
     plt.xticks(rotation=90)
 
     # Draw red horizontal lines for avg
-    plt.axhline(y=avg, color='red', linestyle='--', label='Avg')
-    plt.text(950, avg * 1.05, f'Avg: {avg:.2f}', color='black')
+    if visualize_mean:
+        plt.axhline(y=avg, color='red', linestyle='--', label='Avg')
+        plt.text(950, avg * 1.05, f'Avg: {avg:.2f}', color='black')
     # Draw red vertical lines for 25% and 75% IKI
     # plt.axvline(x=iki_25, color='red', linestyle='--', label='25% IKI')
     # plt.axvline(x=iki_75, color='red', linestyle='--', label='75% IKI')
@@ -333,7 +338,7 @@ def plot_ac_vs_iki(ac_intervals_df, save_file_name=None, origin_df=None, interva
     plt.show()
 
 
-def plot_num_vs_iki(num_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info=''):
+def plot_num_vs_iki(num_intervals_df, save_file_name=None, origin_df=None, interval_size=10, label_extra_info='', visualize_mean=False):
     # Convert interval to string and get the midpoint for the label
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_75 = origin_df['IKI'].quantile(0.75)
@@ -362,21 +367,22 @@ def plot_num_vs_iki(num_intervals_df, save_file_name=None, origin_df=None, inter
     plt.xticks(rotation=90)
 
     # Draw red vertical lines for 25% and 75% IKI
-    plt.axvline(x=iki_25, color='red', linestyle='--', label='25% IKI')
-    plt.axvline(x=iki_75, color='red', linestyle='--', label='75% IKI')
-    plt.axvline(x=iki_95, color='red', linestyle='--', label='95% IKI')
-    plt.axvline(x=iki_99, color='red', linestyle='--', label='99% IKI')
+    if visualize_mean:
+        plt.axvline(x=iki_25, color='red', linestyle='--', label='25% IKI')
+        plt.axvline(x=iki_75, color='red', linestyle='--', label='75% IKI')
+        plt.axvline(x=iki_95, color='red', linestyle='--', label='95% IKI')
+        plt.axvline(x=iki_99, color='red', linestyle='--', label='99% IKI')
 
-    # Text annotations
-    plt.text(iki_25, max(num_intervals_df['NUM']), f'{int(iki_25)}', color='red', horizontalalignment='right')
-    plt.text(iki_75, max(num_intervals_df['NUM']), f'{int(iki_75)}', color='red', horizontalalignment='right')
-    plt.text(iki_95, max(num_intervals_df['NUM']), f'{int(iki_95)}', color='red', horizontalalignment='right')
-    plt.text(iki_99, max(num_intervals_df['NUM']), f'{int(iki_99)}', color='red', horizontalalignment='right')
+        # Text annotations
+        plt.text(iki_25, max(num_intervals_df['NUM']), f'{int(iki_25)}', color='red', horizontalalignment='right')
+        plt.text(iki_75, max(num_intervals_df['NUM']), f'{int(iki_75)}', color='red', horizontalalignment='right')
+        plt.text(iki_95, max(num_intervals_df['NUM']), f'{int(iki_95)}', color='red', horizontalalignment='right')
+        plt.text(iki_99, max(num_intervals_df['NUM']), f'{int(iki_99)}', color='red', horizontalalignment='right')
 
-    plt.text(iki_25, max(num_intervals_df['NUM']) * 0.9, "25%", color='black', horizontalalignment='right')
-    plt.text(iki_75, max(num_intervals_df['NUM']) * 0.9, "75%", color='black', horizontalalignment='right')
-    plt.text(iki_95, max(num_intervals_df['NUM']) * 0.9, "95%", color='black', horizontalalignment='right')
-    plt.text(iki_99, max(num_intervals_df['NUM']) * 0.9, "99%", color='black', horizontalalignment='right')
+        plt.text(iki_25, max(num_intervals_df['NUM']) * 0.9, "25%", color='black', horizontalalignment='right')
+        plt.text(iki_75, max(num_intervals_df['NUM']) * 0.9, "75%", color='black', horizontalalignment='right')
+        plt.text(iki_95, max(num_intervals_df['NUM']) * 0.9, "95%", color='black', horizontalalignment='right')
+        plt.text(iki_99, max(num_intervals_df['NUM']) * 0.9, "99%", color='black', horizontalalignment='right')
 
     # # Add legend
     # plt.legend()
@@ -398,7 +404,7 @@ def plot_num_vs_iki(num_intervals_df, save_file_name=None, origin_df=None, inter
 
 
 def plot_edit_distance_vs_iki(edit_distance_intervals_df, save_file_name=None, origin_df=None, interval_size=10,
-                              label_extra_info=''):
+                              label_extra_info='', visualize_mean=False):
     # Convert interval to string and get the midpoint for the label
     iki_25 = origin_df['IKI'].quantile(0.25)
     iki_75 = origin_df['IKI'].quantile(0.75)
@@ -433,8 +439,9 @@ def plot_edit_distance_vs_iki(edit_distance_intervals_df, save_file_name=None, o
     plt.ylim(bottom=y_bottom, top=y_top)  # Here's the key change
 
     # Draw red horizontal lines for avg
-    plt.axhline(y=avg, color='red', linestyle='--', label='Avg')
-    plt.text(100, avg * 1.05, f'Avg: {avg:.2f}', color='black')
+    if visualize_mean:
+        plt.axhline(y=avg, color='red', linestyle='--', label='Avg')
+        plt.text(100, avg * 1.05, f'Avg: {avg:.2f}', color='black')
     # # Draw red vertical lines for 25% and 75% IKI
     # plt.axvline(x=iki_25, color='red', linestyle='--', label='25% IKI')
     # plt.axvline(x=iki_75, color='red', linestyle='--', label='75% IKI')
@@ -478,7 +485,7 @@ def plot_edit_distance_vs_iki(edit_distance_intervals_df, save_file_name=None, o
     plt.show()
 
 
-def plot_num_vs_wmr(save_file_name=None, origin_df=None, interval_size=0.05, label_extra_info=''):
+def plot_num_vs_wmr(save_file_name=None, origin_df=None, interval_size=0.05, label_extra_info='', visualize_mean=False):
     # use wmr_intervals_df['MODIFIED_WORD_COUNT'] / wmr_intervals_df['WORD_COUNT'] to get the WMR
     origin_df['WMR'] = origin_df['MODIFIED_WORD_COUNT'] / origin_df['WORD_COUNT']
 

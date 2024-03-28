@@ -248,6 +248,9 @@ def error_detection(triplets):
                 elif P[b] != "·":
                     errors += [[0, "n", [T[b], T[b]]]]  # uncorreced no error
                 a = b + 1
+        if len(IS) < len(P):
+            for i in range(len(IS), len(P)):
+                errors += [[0, "o", [P[i], "~"]]]
         errors_per_triplet += [errors]
     # Returns a series of the errors/non-errors present in the user typed phrase.
     # The series contains items of this type [0, i, [~, z]] where:
@@ -471,8 +474,10 @@ def test_phrase(target_phrase, user_phrase, input_stream, verbose=True):
     all_error_lists = error_detection(all_edited_triplets)
 
     best_set, occurrences = optimal_error_set(all_error_lists, unique_transposition_sets)
-
+    INF, IF, C, F = count_component(all_error_lists[-1])
+    print("INF: {} | IF: {} | C: {} | F: {}".format(INF, IF, C, F))
     count = 0
+    new_all_error_lists = []
     for error_list in all_error_lists:
         print("Alignment {}:".format(str(count + 1)))
         print("Target: {}\nUser  : {}\n".format(alignments[count][0], alignments[count][1]))
@@ -487,25 +492,126 @@ def test_phrase(target_phrase, user_phrase, input_stream, verbose=True):
             for error in new_error_list:
                 visualize_error(error)
             print("\n")
-            uncorr_errors, corr_errors = optimal_error_set(new_error_list)
+        new_all_error_lists.append(new_error_list)
+    uncorr_errors, corr_errors = optimal_error_set(new_all_error_lists, unique_transposition_sets)
 
-            print("Uncorrected: INS: {} | OMI: {} | SUB: {} | TRA: {} | CAP: {} | NON: {}".format(
-                *(err for _, err in uncorr_errors)))
-            print("Corrected  : INS: {} | OMI: {} | SUB: {} | TRA: {} | CAP: {} | NON: {}".format(
-                *(err for _, err in corr_errors)))
-            print("---------------------------------------------------------------------------")
-            print()
+    # print("Uncorrected: INS: {} | OMI: {} | SUB: {} | TRA: {} | CAP: {} | NON: {}".format(
+    #     *(err for _, err in uncorr_errors)))
+    # print("Corrected  : INS: {} | OMI: {} | SUB: {} | TRA: {} | CAP: {} | NON: {}".format(
+    #     *(err for _, err in corr_errors)))
+    # print("---------------------------------------------------------------------------")
+    # print()
+    #
+    # print("The most common set with highest TRA error prioritization is:")
+    # print("Uncorrected: INS: {} | OMI: {} | SUB: {} | TRA: {} | CAP: {} | NON: {}".format(
+    #     *(err for _, err in best_set[0])))
+    # print("Corrected  : INS: {} | OMI: {} | SUB: {} | TRA: {} | CAP: {} | NON: {}".format(
+    #     *(err for _, err in best_set[1])))
+    # print("And it occurrs in {} out of {} alignments".format(occurrences, len(all_error_lists)))
 
-    print("The most common set with highest TRA error prioritization is:")
-    print("Uncorrected: INS: {} | OMI: {} | SUB: {} | TRA: {} | CAP: {} | NON: {}".format(
-        *(err for _, err in best_set[0])))
-    print("Corrected  : INS: {} | OMI: {} | SUB: {} | TRA: {} | CAP: {} | NON: {}".format(
-        *(err for _, err in best_set[1])))
-    print("And it occurrs in {} out of {} alignments".format(occurrences, len(all_error_lists)))
+
+def get_input_stream(test_section_df):
+    input_stream_string = ''
+    last_length = None
+    prev_row = None
+
+    for index, row in test_section_df.iterrows():
+        # If a deletion operation happened then add a "#" symbol
+        if last_length is not None and len(str(row['INPUT'])) == last_length - 1:
+            input_stream_string += '<'
+        # Sometimes there are double entries, no idea why, so we ignore them and skip over
+        elif prev_row is not None and (str(row['DATA']) == prev_row[0]
+                                       and str(row['INPUT']) == prev_row[1]):
+            pass
+        # If all's good then add the newest character to the input stream
+        else:
+            input_stream_string += str(row['INPUT'])[-1]
+        # Update last length and previoous row
+        last_length = len(str(row['INPUT']))
+        prev_row = [str(row['DATA']), str(row['INPUT'])]
+
+        auto_corrected_if_count, auto_corrected_c_count, \
+        auto_corrected_word_count, auto_correct_count = 0, 0, 0, 0
+
+    return input_stream_string, auto_corrected_if_count, auto_corrected_c_count, auto_corrected_word_count, auto_correct_count
+
+
+def count_component(error_list, verbose=False):
+    INF, IF, C, F = 0, 0, 0, 0
+    for error in error_list:
+        if error[0] == 0:
+            if error[1] == "i":
+                INF += 1
+                if verbose:
+                    print(
+                        "Uncorrected | Type: " + colored("INS-Error", "on_light_green") + " | Letters: {}".format(
+                            error[2]))
+            elif error[1] == "o":
+                INF += 1
+                if verbose:
+                    print("Uncorrected | Type: " + colored("OMI-Error", "on_light_magenta") + " | Letters: {}".format(
+                        error[2]))
+            elif error[1] == "s":
+                INF += 1
+                if verbose:
+                    print(
+                        "Uncorrected | Type: " + colored("SUB-Error", "on_light_cyan") + " | Letters: {}".format(
+                            error[2]))
+            elif error[1] == "c":
+                INF += 1
+                if verbose:
+                    print(
+                        "Uncorrected | Type: " + colored("CAP-Error", "on_light_blue") + " | Letters: {}".format(
+                            error[2]))
+            elif error[1] == "t":
+                INF += 1
+                if verbose:
+                    print(
+                        "Uncorrected | Type: " + colored("TRA-Error", "on_light_white") + " | Letters: {}".format(
+                            error[2]))
+            else:
+                if verbose:
+                    print("Uncorrected | Type: NON-Error | Letters: {}".format(error[2]))
+                C += 1
+        else:
+            if error[1] == "i":
+                IF += 1
+                if verbose:
+                    print("Corrected   | Type: " + colored("INS-Error", "on_green") + " | Letters: {}".format(error[2]))
+            elif error[1] == "o":
+                IF += 1
+                if verbose:
+                    print(
+                        "Corrected   | Type: " + colored("OMI-Error", "on_magenta") + " | Letters: {}".format(error[2]))
+            elif error[1] == "s":
+                IF += 1
+                if verbose:
+                    print("Corrected   | Type: " + colored("SUB-Error", "on_cyan") + " | Letters: {}".format(error[2]))
+            elif error[1] == "c":
+                IF += 1
+                if verbose:
+                    print("Corrected   | Type: " + colored("CAP-Error", "on_blue") + " | Letters: {}".format(error[2]))
+            elif error[1] == "t":
+                IF += 1
+                if verbose:
+                    print("Corrected   | Type: " + colored("TRA-Error", "on_white") + " | Letters: {}".format(error[2]))
+            else:
+                if verbose:
+                    print("Corrected   | Type: NON-Error | Letters: {}".format(error[2]))
+                # C += 1
+    return INF, IF, C, F
 
 
 if __name__ == "__main__":
-    reference_sentence = "the quick brown"
-    user_input = "th quick brpown"
-    input_stream = "th quxck<<<ick brpown"
+    pass
+    # reference_sentence = "the quick brown"
+    # user_input = "th quick brpown"
+    # input_stream = "th quxck<<<ick brpown"
+    # user_input = 'Was wondering if you and Natalie connected?'
+    # input_stream = 'Was c<wimedrting <<<<<<<<<<ondering if you and Natalie conce<<nected ?<<v<?'
+    # reference_sentence = "Was wondering if you and Natalie connected?"
+    # test_phrase(reference_sentence, user_input, input_stream)
+    reference_sentence = 'lähetä paperit minulle'
+    user_input = 'lähetä paperit minulm'
+    input_stream = 'lähet<tä paperit minulm'
     test_phrase(reference_sentence, user_input, input_stream)

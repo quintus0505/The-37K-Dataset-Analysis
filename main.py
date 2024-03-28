@@ -6,17 +6,19 @@ import argparse
 
 parser = argparse.ArgumentParser()
 
+# for data cleaning
 parser.add_argument("--data-cleaning", action="store_true", default=False, help="generate logdata file")
+
+# options for data cleaning and analysis
 parser.add_argument("--auto-correct", action="store_true", default=False, help='if considering auto-correct')
 parser.add_argument("--predict", action="store_true", default=False, help='if considering prediction')
 parser.add_argument("--swipe", action="store_true", default=False, help='if considering swipe')
 parser.add_argument("--keyboard", type=str, default=None, help='keyboard type')
 parser.add_argument("--os", type=str, default=None, help='os type')
+
+# for both visualization and analysis
 parser.add_argument("--analyze", action="store_true", default=False, help="anylyze the data")
 parser.add_argument("--visualize", action="store_true", default=False, help="visualize the data")
-parser.add_argument("--filter", type=float, default=0, help='filter those test section with iki below this percentage')
-parser.add_argument('--error-rate', action="store_true", default=False, help="compute corrected and uncorrected error rate")
-
 parser.add_argument("--wmr", action="store_true", default=False, help="wmr")
 parser.add_argument("--ac", action="store_true", default=False, help="ac")
 parser.add_argument("--modification", action="store_true", default=False, help="modification")
@@ -28,6 +30,20 @@ parser.add_argument("--visualize-by-edit-distance", type=int, default=0,
                     help='split the dataset and visualize by edit distance')
 parser.add_argument("--visualize-by-sentence-length", type=int, default=0,
                     help='split the dataset and visualize by sentence length')
+
+# visualization options
+parser.add_argument("--avg", action="store_true", default=False, help="visualize the horizontal line of average")
+
+# for filter
+parser.add_argument("--filter", action="store_true", default=False, help='filter the data')
+parser.add_argument("--rebuild", action="store_true", default=False, help='rebuild the typing data')
+parser.add_argument("--percentage", type=float, default=0,
+                    help='filter those test section with iki below this percentage')
+parser.add_argument("--iki", type=float, default=200, help='filter those log data with iki around this value')
+
+# for data analysis
+parser.add_argument('--error-rate', action="store_true", default=False,
+                    help="compute corrected and uncorrected error rate")
 
 args = parser.parse_args()
 
@@ -119,14 +135,34 @@ if __name__ == "__main__":
 
     if args.filter:
         parser = Parse()
-        filter_ratio = args.filter
-        print("filtering data below {} % perscent".format(args.filter))
-        name_info, ite_list, kbd, os = get_name_str()
-        save_file_name = 'filtered_' + str(args.filter) + "_" + name_info + 'logdata.csv'
-        file_name = name_info + 'logdata.csv'
-        logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, file_name)
-        parser.filter(filter_ratio=filter_ratio, ite=ite_list, keyboard=kbd, save_file_name=save_file_name,
-                      load_file_name=logdata_path)
+        if args.percentage:
+            filter_ratio = args.percentage
+            print("filtering data below {} % perscent".format(args.percentage))
+            name_info, ite_list, kbd, os = get_name_str()
+            save_file_name = 'filtered_percentage_' + str(args.percentage) + "_" + name_info + 'logdata.csv'
+            file_name = name_info + 'logdata.csv'
+            logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, file_name)
+            parser.filter_percentage(filter_ratio=filter_ratio, ite=ite_list, keyboard=kbd,
+                                     save_file_name=save_file_name,
+                                     load_file_name=logdata_path)
+        if args.iki:
+            filter_iki = args.iki
+            print("filtering data around {} ms".format(args.iki))
+            name_info, ite_list, kbd, os = get_name_str()
+            save_file_name = 'filtered_iki_' + str(args.iki) + "_" + name_info + 'logdata.csv'
+            file_name = name_info + 'logdata.csv'
+            logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, file_name)
+            wmr_file_name = 'wmr_' + name_info + 'logdata_visualization.csv'
+            wmr_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name),
+                                 names=WMR_VISUALIZATION_COLUMNS,
+                                 encoding='ISO-8859-1')
+            parser.filter_iki(filter_iki=filter_iki, ite=ite_list, keyboard=kbd, save_file_name=save_file_name,
+                              load_file_name=logdata_path, wmr_file_name=wmr_file_name, wmr_df=wmr_df)
+            if args.rebuild:
+                rebuild_save_file_name = 'filtered_iki_' + str(args.iki) + "_" + name_info + 'rebuild.csv'
+                parser.rebuild_typing(wmr_df=wmr_df,
+                                      rebuild_save_file_name=rebuild_save_file_name,
+                                      filtered_logdata_save_file_name=save_file_name)
 
     if args.error_rate:
         print("computing error rate")
@@ -134,9 +170,11 @@ if __name__ == "__main__":
         file_name = name_info + 'logdata.csv'
         logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, file_name)
         parser = Parse()
-        parser.compute_error_rate_correction(full_log_data=True, ite=ite_list, keyboard=kbd, custom_logdata_path=logdata_path)
+        parser.compute_error_rate_correction(full_log_data=True, ite=ite_list, keyboard=kbd,
+                                             custom_logdata_path=logdata_path)
 
     if args.visualize:
+        visualize_mean = args.avg
         interval_size = 10
         print("visualizing data")
         name_info, ite_list, kbd, os = get_name_str()
@@ -157,7 +195,8 @@ if __name__ == "__main__":
             iki_interval_df = calculate_iki_intervals(modification_visualization_df,
                                                       y_label='MODIFICATION', interval_size=interval_size)
             plot_modification_vs_iki(iki_interval_df, save_file_name=modification_file_name.split('.')[0],
-                                     interval_size=interval_size, origin_df=modification_visualization_df)
+                                     interval_size=interval_size, origin_df=modification_visualization_df,
+                                     visualize_mean=visualize_mean)
 
         if args.wmr:
             wmr_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name),
@@ -167,10 +206,10 @@ if __name__ == "__main__":
             iki_interval_df = calculate_iki_intervals(wmr_visualization_df, y_label='WMR',
                                                       interval_size=interval_size)
             plot_wmr_vs_iki(iki_interval_df, save_file_name=wmr_file_name.split('.')[0],
-                            interval_size=interval_size, origin_df=wmr_visualization_df)
+                            interval_size=interval_size, origin_df=wmr_visualization_df, visualize_mean=visualize_mean)
 
             plot_num_vs_wmr(save_file_name='num_vs_wmr_' + name_info + 'logdata_visualization',
-                            interval_size=0.005, origin_df=wmr_visualization_df)
+                            interval_size=0.005, origin_df=wmr_visualization_df, visualize_mean=visualize_mean)
 
         if ac_file_name and args.ac:
             ac_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, ac_file_name),
@@ -180,7 +219,7 @@ if __name__ == "__main__":
             iki_interval_df = calculate_iki_intervals(ac_visualization_df, y_label='AC',
                                                       interval_size=interval_size)
             plot_ac_vs_iki(iki_interval_df, save_file_name=ac_file_name.split('.')[0], interval_size=interval_size,
-                           origin_df=ac_visualization_df)
+                           origin_df=ac_visualization_df, visualize_mean=visualize_mean)
         if args.edit_distance:
             edit_distance_visualization_df = pd.read_csv(
                 osp.join(DEFAULT_VISUALIZATION_DIR, 'edit_distance_' + name_info + 'logdata_visualization.csv'),
@@ -193,7 +232,8 @@ if __name__ == "__main__":
                                                       interval_size=interval_size)
             plot_edit_distance_vs_iki(iki_interval_df,
                                       save_file_name='edit_distance_' + name_info + 'logdata_visualization',
-                                      interval_size=interval_size, origin_df=edit_distance_visualization_df)
+                                      interval_size=interval_size, origin_df=edit_distance_visualization_df,
+                                      visualize_mean=visualize_mean)
         if args.age:
             age_visualization_df = pd.read_csv(
                 osp.join(DEFAULT_VISUALIZATION_DIR, 'age_' + name_info + 'logdata_visualization.csv'),
@@ -217,6 +257,7 @@ if __name__ == "__main__":
                             interval_size=interval_size, origin_df=num_visualization_df)
 
     if args.visualize_by_edit_distance:
+        visualize_mean = args.avg
         interval_size = 10
         print("visualizing data")
         name_info, ite_list, kbd, os = get_name_str()
@@ -266,22 +307,22 @@ if __name__ == "__main__":
                                                       interval_size=interval_size)
             plot_wmr_vs_iki(iki_interval_df, save_file_name=gte_wmr_file_name.split('.')[0],
                             interval_size=interval_size, origin_df=gte_wmr_visualization_df,
-                            label_extra_info=gte_label_extra_info)
+                            label_extra_info=gte_label_extra_info, visualize_mean=visualize_mean)
 
             plot_num_vs_wmr(save_file_name=gte_num_vs_wmr_save_file_name,
                             interval_size=0.005, origin_df=gte_wmr_visualization_df,
-                            label_extra_info=gte_label_extra_info)
+                            label_extra_info=gte_label_extra_info, visualize_mean=visualize_mean)
 
             show_plot_info(lt_wmr_visualization_df, save_file_name=lt_wmr_file_name.split('.')[0], y_label='WMR')
             iki_interval_df = calculate_iki_intervals(lt_wmr_visualization_df, y_label='WMR',
                                                       interval_size=interval_size)
             plot_wmr_vs_iki(iki_interval_df, save_file_name=lt_wmr_file_name.split('.')[0],
                             interval_size=interval_size, origin_df=lt_wmr_visualization_df,
-                            label_extra_info=lt_label_extra_info)
+                            label_extra_info=lt_label_extra_info, visualize_mean=visualize_mean)
 
             plot_num_vs_wmr(save_file_name=lt_num_vs_wmr_save_file_name,
                             interval_size=0.005, origin_df=lt_wmr_visualization_df,
-                            label_extra_info=lt_label_extra_info)
+                            label_extra_info=lt_label_extra_info, visualize_mean=visualize_mean)
 
         if args.modification:
             modification_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, modification_file_name),
@@ -305,7 +346,7 @@ if __name__ == "__main__":
                                                       y_label='MODIFICATION', interval_size=interval_size)
             plot_modification_vs_iki(iki_interval_df, save_file_name=gte_modification_file_name.split('.')[0],
                                      interval_size=interval_size, origin_df=gte_modification_visualization_df,
-                                     label_extra_info=gte_label_extra_info)
+                                     label_extra_info=gte_label_extra_info, visualize_mean=visualize_mean)
 
             show_plot_info(lt_modification_visualization_df, save_file_name=lt_modification_file_name.split('.')[0],
                            y_label='MODIFICATION')
@@ -313,7 +354,7 @@ if __name__ == "__main__":
                                                       y_label='MODIFICATION', interval_size=interval_size)
             plot_modification_vs_iki(iki_interval_df, save_file_name=lt_modification_file_name.split('.')[0],
                                      interval_size=interval_size, origin_df=lt_modification_visualization_df,
-                                     label_extra_info=lt_label_extra_info)
+                                     label_extra_info=lt_label_extra_info, visualize_mean=visualize_mean)
 
         if ac_file_name and args.ac:
             ac_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, ac_file_name),
@@ -335,15 +376,18 @@ if __name__ == "__main__":
             iki_interval_df = calculate_iki_intervals(gte_ac_visualization_df, y_label='AC',
                                                       interval_size=interval_size)
             plot_ac_vs_iki(iki_interval_df, save_file_name=gte_ac_file_name.split('.')[0], interval_size=interval_size,
-                           origin_df=gte_ac_visualization_df, label_extra_info=gte_label_extra_info)
+                           origin_df=gte_ac_visualization_df, label_extra_info=gte_label_extra_info,
+                           visualize_mean=visualize_mean)
 
             show_plot_info(lt_ac_visualization_df, save_file_name=lt_ac_file_name.split('.')[0], y_label='AC')
             iki_interval_df = calculate_iki_intervals(lt_ac_visualization_df, y_label='AC',
                                                       interval_size=interval_size)
             plot_ac_vs_iki(iki_interval_df, save_file_name=lt_ac_file_name.split('.')[0], interval_size=interval_size,
-                           origin_df=lt_ac_visualization_df, label_extra_info=lt_label_extra_info)
+                           origin_df=lt_ac_visualization_df, label_extra_info=lt_label_extra_info,
+                           visualize_mean=visualize_mean)
 
     if args.visualize_by_sentence_length:
+        visualize_mean = args.avg
         interval_size = 10
         print("visualizing data")
         name_info, ite_list, kbd, os = get_name_str()
@@ -400,22 +444,22 @@ if __name__ == "__main__":
                                                       interval_size=interval_size)
             plot_wmr_vs_iki(iki_interval_df, save_file_name=gte_wmr_file_name.split('.')[0],
                             interval_size=interval_size, origin_df=gte_wmr_visualization_df,
-                            label_extra_info=gte_label_extra_info)
+                            label_extra_info=gte_label_extra_info, visualize_mean=visualize_mean)
 
             plot_num_vs_wmr(save_file_name=gte_num_vs_wmr_save_file_name,
                             interval_size=0.005, origin_df=gte_wmr_visualization_df,
-                            label_extra_info=gte_label_extra_info)
+                            label_extra_info=gte_label_extra_info, visualize_mean=visualize_mean)
 
             show_plot_info(lt_wmr_visualization_df, save_file_name=lt_wmr_file_name.split('.')[0], y_label='WMR')
             iki_interval_df = calculate_iki_intervals(lt_wmr_visualization_df, y_label='WMR',
                                                       interval_size=interval_size)
             plot_wmr_vs_iki(iki_interval_df, save_file_name=lt_wmr_file_name.split('.')[0],
                             interval_size=interval_size, origin_df=lt_wmr_visualization_df,
-                            label_extra_info=lt_label_extra_info)
+                            label_extra_info=lt_label_extra_info, visualize_mean=visualize_mean)
 
             plot_num_vs_wmr(save_file_name=lt_num_vs_wmr_save_file_name,
                             interval_size=0.005, origin_df=lt_wmr_visualization_df,
-                            label_extra_info=lt_label_extra_info)
+                            label_extra_info=lt_label_extra_info, visualize_mean=visualize_mean)
 
         if args.modification:
             modification_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, modification_file_name),
@@ -439,7 +483,7 @@ if __name__ == "__main__":
                                                       y_label='MODIFICATION', interval_size=interval_size)
             plot_modification_vs_iki(iki_interval_df, save_file_name=gte_modification_file_name.split('.')[0],
                                      interval_size=interval_size, origin_df=gte_modification_visualization_df,
-                                     label_extra_info=gte_label_extra_info)
+                                     label_extra_info=gte_label_extra_info, visualize_mean=visualize_mean)
 
             show_plot_info(lt_modification_visualization_df, save_file_name=lt_modification_file_name.split('.')[0],
                            y_label='MODIFICATION')
@@ -447,7 +491,7 @@ if __name__ == "__main__":
                                                       y_label='MODIFICATION', interval_size=interval_size)
             plot_modification_vs_iki(iki_interval_df, save_file_name=lt_modification_file_name.split('.')[0],
                                      interval_size=interval_size, origin_df=lt_modification_visualization_df,
-                                     label_extra_info=lt_label_extra_info)
+                                     label_extra_info=lt_label_extra_info, visualize_mean=visualize_mean)
 
         if ac_file_name and args.ac:
             ac_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, ac_file_name),
@@ -469,16 +513,12 @@ if __name__ == "__main__":
             iki_interval_df = calculate_iki_intervals(gte_ac_visualization_df, y_label='AC',
                                                       interval_size=interval_size)
             plot_ac_vs_iki(iki_interval_df, save_file_name=gte_ac_file_name.split('.')[0], interval_size=interval_size,
-                           origin_df=gte_ac_visualization_df, label_extra_info=gte_label_extra_info)
+                           origin_df=gte_ac_visualization_df, label_extra_info=gte_label_extra_info,
+                           visualize_mean=visualize_mean)
 
             show_plot_info(lt_ac_visualization_df, save_file_name=lt_ac_file_name.split('.')[0], y_label='AC')
             iki_interval_df = calculate_iki_intervals(lt_ac_visualization_df, y_label='AC',
                                                       interval_size=interval_size)
             plot_ac_vs_iki(iki_interval_df, save_file_name=lt_ac_file_name.split('.')[0], interval_size=interval_size,
-                           origin_df=lt_ac_visualization_df, label_extra_info=lt_label_extra_info)
-
-
-
-
-
-
+                           origin_df=lt_ac_visualization_df, label_extra_info=lt_label_extra_info,
+                           visualize_mean=visualize_mean)
