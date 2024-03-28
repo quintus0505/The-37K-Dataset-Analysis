@@ -160,14 +160,14 @@ class Parse(ABC):
 
         # committed sentence from the last row of the test section
         committed_sentence = test_section_df.iloc[-1]['INPUT']
-        if len(committed_sentence) < 4 or committed_sentence != committed_sentence:
+        if len(committed_sentence) < 4 or committed_sentence != committed_sentence or committed_sentence[-1] == ' ':
             for i in range(2, 5):
-                if len(committed_sentence) < 3:
+                if len(committed_sentence) < 3 or committed_sentence[-1] == ' ':
                     test_section_df = test_section_df.iloc[:-1]
                     committed_sentence = test_section_df.iloc[-1]['INPUT']
-        while committed_sentence[-1] == ' ':
-            committed_sentence = committed_sentence[:-1]
-            test_section_df.iloc[-1]['INPUT'] = committed_sentence
+        # while committed_sentence[-1] == ' ':
+        #     committed_sentence = committed_sentence[:-1]
+        #     test_section_df.iloc[-1]['INPUT'] = committed_sentence
 
         return test_section_df, committed_sentence
 
@@ -325,7 +325,8 @@ class Parse(ABC):
                     reformat_f_count += 1
                     reformatted_input += current_input[len(pre_input):]
                 else:
-                    # move the cursor to the middle of the sentence and start typing
+                    # move the cursor to the middle of the sentence and start typing,
+                    # we just assume that every keystroke result in only one change
                     for i in range(len(pre_input)):
                         if pre_input[i] != current_input[i]:
                             # insert current_input[i] to the reformatted_input at the same position
@@ -334,10 +335,18 @@ class Parse(ABC):
                             reformat_if_count += 1
                             break
             elif row['ITE_AUTO'] or len(current_input) == len(pre_input):
+                if not row['ITE_AUTO'] and current_input.lower() == pre_input.lower():
+                    for i in range(len(pre_input)):
+                        if pre_input[i] != current_input[i]:
+                            reformatted_input = reformatted_input[:i] + current_input[i] + reformatted_input[i + 1:]
+                            break
+                    reformat_if_count += 1
+                    pre_input = current_input
+                    continue
                 # use auto correction, replace the last word in the reformatted_input
                 # with the last word in the current_input
                 # if more than one words in the current_input, only consider the last word
-                if not row['ITE_AUTO'] and current_input[:-1] == pre_input[:-1]:
+                elif not row['ITE_AUTO'] and current_input[:-1] == pre_input[:-1]:
                     # replace the last character in the reformatted_input with the last character in the current_input
                     reformatted_input = reformatted_input[:len(current_input) + bsp_count - 2] + current_input[-1] + \
                                         reformatted_input[len(current_input) + bsp_count - 1:]
@@ -365,6 +374,14 @@ class Parse(ABC):
                     reformatted_input += '<'
                     bsp_count += 1
                 # find if the last word in the reformatted_input is not the same as the last word in the current_input
+                elif lev.distance(pre_input, current_input) == 1:
+                    # move the cursor to the middle of the sentence and use backspace to delete
+                    for i in range(len(pre_input)):
+                        if pre_input[i] != current_input[i]:
+                            reformatted_input = reformatted_input[:i] + '<' + reformatted_input[i:]
+                            reformat_c_count += 1
+                            bsp_count += 1
+                            break
                 elif pre_input.rsplit(' ', 1)[1] != current_input.rsplit(' ', 1)[1]:
                     # replace the last word in the reformatted_input with the last word in the current_input
                     reformatted_input = reformatted_input.rsplit(' ', 1)[0] + ' ' + current_input.rsplit(' ', 1)[1]
@@ -402,6 +419,8 @@ class Parse(ABC):
         self.load_sentences()
         for test_section_id in self.test_section_ids:
             iter_count += 1
+            # if test_section_id == 3434:
+            #     print("test_section_id: ", test_section_id)
             try:
                 test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
                 if committed_sentence != committed_sentence:
@@ -432,10 +451,9 @@ class Parse(ABC):
                         break
                 # correct_count, inf_count, if_count, fix_count = track_typing_errors(target_sentence,
                 #                                                                     reformatted_input)
-                total_correct_count += correct_count + auto_corrected_c_count - auto_corrected_word_count
-                total_inf_count += inf_count
-                total_if_count += if_count + auto_corrected_if_count
-                total_fix_count += fix_count + auto_correct_count
+                correct_count += auto_corrected_c_count - auto_corrected_word_count
+                if_count += auto_corrected_if_count
+                fix_count += auto_correct_count
                 self.test_section_count += 1
                 uncorrected_error_rate = inf_count / (correct_count + inf_count + if_count)
                 corrected_error_rate = if_count / (correct_count + inf_count + if_count)
@@ -448,7 +466,8 @@ class Parse(ABC):
                 #     print("Corrected error rate: ", corrected_error_rate)
                 #     print("Uncorrected error rate: ", uncorrected_error_rate)
                 if iter_count % 1000 == 0:
-                    print("test_section_count: ", self.test_section_count)
+                    print("Total test sections count", iter_count)
+                    print("Selected test sections count: ", self.test_section_count)
                     print("test_section_id: ", test_section_id)
                     print("Corrected error rate mean: ", np.mean(self.corrected_error_rates))
                     print("Corrected error rate std: ", np.std(self.corrected_error_rates))
@@ -456,7 +475,12 @@ class Parse(ABC):
                     print("Uncorrected error rate std: ", np.std(self.uncorrected_error_rates))
 
             except:
-                pass
+                try:
+                    auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
+                except:
+                    pass
+        print("Total test sections count", iter_count)
+        print("Selected test sections count: ", self.test_section_count)
         print("Corrected error rate mean: ", np.mean(self.corrected_error_rates))
         print("Corrected error rate std: ", np.std(self.corrected_error_rates))
         print("Uncorrected error rate mean: ", np.mean(self.uncorrected_error_rates))
