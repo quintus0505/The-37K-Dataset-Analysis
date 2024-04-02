@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from tools.data_loading import clean_participants_data, get_logdata_df, get_test_section_df, get_sentences_df
 import pandas as pd
 from config import logdata_columns, DEFAULT_DATASETS_DIR, DEFAULT_VISUALIZATION_DIR, DEFAULT_CLEANED_DATASETS_DIR, \
-    DEFAULT_FIGS_DIR
+    DEFAULT_FIGS_DIR, test_sections_columns
 import os.path as osp
 import numpy as np
 import Levenshtein
@@ -302,8 +302,11 @@ class Parse(ABC):
         reformat_c_count = 0
         reformat_f_count = 0
         bsp_count = 0
+        bsp_index_list = []
         auto_corrected_word_count = 0
         for index, row in test_section_df.iterrows():
+            if row['INPUT'] != row['INPUT']:
+                continue
             current_input = row['INPUT']
             if current_input != current_input:
                 current_input = ''
@@ -318,7 +321,14 @@ class Parse(ABC):
                     for i in range(len(pre_input)):
                         if pre_input[i] != current_input[i]:
                             # change the reformatted_input[i] to current_input[i]
-                            reformatted_input = reformatted_input[:i] + current_input[i] + reformatted_input[i + 1:]
+                            # count how many bsp before i
+                            bsp_count_before = 0
+                            if bsp_index_list:
+                                for bsp_index in bsp_index_list:
+                                    if bsp_index < i:
+                                        bsp_count_before += 1
+                            reformatted_input = reformatted_input[:i + 2 * bsp_count_before] + current_input[
+                                i] + reformatted_input[i + 2 * bsp_count_before + 1:]
                             break
                     # then add the rest of the input
                     reformat_if_count += 1
@@ -331,14 +341,26 @@ class Parse(ABC):
                         if pre_input[i] != current_input[i]:
                             # insert current_input[i] to the reformatted_input at the same position
                             # TODO: Let's assume that all this action result in correct typing
-                            reformatted_input = reformatted_input[:i] + current_input[i] + reformatted_input[i:]
+                            bsp_count_before = 0
+                            if bsp_index_list:
+                                for bsp_index in bsp_index_list:
+                                    if bsp_index < i:
+                                        bsp_count_before += 1
+                            reformatted_input = reformatted_input[:i + 2 * bsp_count_before] + current_input[
+                                i] + reformatted_input[i + 2 * bsp_count_before:]
                             reformat_if_count += 1
                             break
             elif row['ITE_AUTO'] or len(current_input) == len(pre_input):
                 if not row['ITE_AUTO'] and current_input.lower() == pre_input.lower():
                     for i in range(len(pre_input)):
                         if pre_input[i] != current_input[i]:
-                            reformatted_input = reformatted_input[:i] + current_input[i] + reformatted_input[i + 1:]
+                            bsp_count_before = 0
+                            if bsp_index_list:
+                                for bsp_index in bsp_index_list:
+                                    if bsp_index < i:
+                                        bsp_count_before += 1
+                            reformatted_input = reformatted_input[:i + 2 * bsp_count_before] + current_input[
+                                i] + reformatted_input[i + 1 + 2 * bsp_count_before:]
                             break
                     reformat_if_count += 1
                     pre_input = current_input
@@ -347,9 +369,15 @@ class Parse(ABC):
                 # with the last word in the current_input
                 # if more than one words in the current_input, only consider the last word
                 elif not row['ITE_AUTO'] and current_input[:-1] == pre_input[:-1]:
+                    bsp_count_before = 0
+                    if bsp_index_list:
+                        for bsp_index in bsp_index_list:
+                            if bsp_index < len(current_input) - 1:
+                                bsp_count_before += 1
                     # replace the last character in the reformatted_input with the last character in the current_input
-                    reformatted_input = reformatted_input[:len(current_input) + bsp_count - 2] + current_input[-1] + \
-                                        reformatted_input[len(current_input) + bsp_count - 1:]
+                    reformatted_input = reformatted_input[:len(current_input) - 2 + 2 * bsp_count_before] + \
+                                        current_input[-1] + \
+                                        reformatted_input[len(current_input) - 1 + 2 * bsp_count_before:]
                     reformat_if_count += 1
                     pre_input = current_input
                     continue
@@ -373,14 +401,22 @@ class Parse(ABC):
                 if len(pre_input) - len(current_input) == 1 and pre_input[:-1] == current_input:
                     reformatted_input += '<'
                     bsp_count += 1
+                    bsp_index_list.append(len(current_input) - 1)
                 # find if the last word in the reformatted_input is not the same as the last word in the current_input
                 elif lev.distance(pre_input, current_input) == 1:
                     # move the cursor to the middle of the sentence and use backspace to delete
                     for i in range(len(pre_input)):
                         if pre_input[i] != current_input[i]:
-                            reformatted_input = reformatted_input[:i] + '<' + reformatted_input[i:]
+                            bsp_count_before = 0
+                            if bsp_index_list:
+                                for bsp_index in bsp_index_list:
+                                    if bsp_index < i - 1:
+                                        bsp_count_before += 1
+                            reformatted_input = reformatted_input[:i + 2 * bsp_count_before] + '<' + reformatted_input[
+                                                                                                     i + 2 * bsp_count_before:]
                             reformat_c_count += 1
                             bsp_count += 1
+                            bsp_index_list.append(i)
                             break
                 elif pre_input.rsplit(' ', 1)[1] != current_input.rsplit(' ', 1)[1]:
                     # replace the last word in the reformatted_input with the last word in the current_input
@@ -398,9 +434,16 @@ class Parse(ABC):
                     # move the cursor to the middle of the sentence and use backspace to delete
                     for i in range(len(pre_input)):
                         if pre_input[i] != current_input[i]:
-                            reformatted_input = reformatted_input[:i] + '<' + reformatted_input[i:]
+                            bsp_count_before = 0
+                            if bsp_index_list:
+                                for bsp_index in bsp_index_list:
+                                    if bsp_index < i - 1:
+                                        bsp_count_before += 1
+                            reformatted_input = reformatted_input[:i + 2 * bsp_count_before] + '<' + reformatted_input[
+                                                                                                     i + 2 * bsp_count_before:]
                             reformat_c_count += 1
                             bsp_count += 1
+                            bsp_index_list.append(i)
                             break
             pre_input = current_input
         return reformatted_input, reformat_if_count, reformat_c_count, auto_corrected_word_count, reformat_f_count
@@ -417,9 +460,12 @@ class Parse(ABC):
         self.load_data(ite=ite, keyboard=keyboard, full_log_data=full_log_data, custom_logdata_path=custom_logdata_path)
         self.load_test_sections()
         self.load_sentences()
+
+        abandoned_test_section_df = pd.DataFrame(columns=logdata_columns)
+
         for test_section_id in self.test_section_ids:
             iter_count += 1
-            # if test_section_id == 3434:
+            # if test_section_id == 5072:
             #     print("test_section_id: ", test_section_id)
             try:
                 test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
@@ -432,6 +478,10 @@ class Parse(ABC):
 
                 reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
                 auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
+
+                target_sentence += 'eof'
+                committed_sentence += 'eof'
+                reformatted_input += 'eof'
                 flagged_IS = flag_input_stream(reformatted_input)
 
                 _, MSD = min_string_distance(target_sentence, committed_sentence)
@@ -446,6 +496,8 @@ class Parse(ABC):
                 all_error_lists = error_detection(all_edited_triplets)
                 lev_distance = lev.distance(target_sentence, committed_sentence)
                 for error_list in all_error_lists:
+                    # remove the "eof"
+                    error_list = error_list[:-3]
                     inf_count, if_count, correct_count, fix_count = count_component(error_list, verbose=False)
                     if inf_count == lev_distance:
                         break
@@ -478,13 +530,23 @@ class Parse(ABC):
                 try:
                     auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
                 except:
-                    pass
+                    # try:
+                    #     auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
+                    # except:
+                        pass
+                # add current test section to abandoned_test_section_df
+                abandoned_test_section_df = abandoned_test_section_df.append(test_section_df)
+
         print("Total test sections count", iter_count)
         print("Selected test sections count: ", self.test_section_count)
         print("Corrected error rate mean: ", np.mean(self.corrected_error_rates))
         print("Corrected error rate std: ", np.std(self.corrected_error_rates))
         print("Uncorrected error rate mean: ", np.mean(self.uncorrected_error_rates))
         print("Uncorrected error rate std: ", np.std(self.uncorrected_error_rates))
+
+        # save the abandoned test sections to a csv file
+        abandoned_test_section_df.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'abandoned_test_sections.csv'),
+                                         index=False)
 
     def compute_modification(self, full_log_data, ite=None, keyboard=None, custom_logdata_path=None):
         """

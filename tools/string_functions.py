@@ -208,7 +208,7 @@ def error_detection(triplets):
         IS_pos = triplet[2][2]  # IS Position values
 
         a = 0
-        for b in range(len(IS)):  # 0 to |IS|-1
+        for b in range(min(len(IS), len(T))):  # 0 to |IS|-1
             if T[b] == '~':
                 errors += [[0, "o", [P[b], "~"]]]  # uncorrected omission
             elif IS_flags[b] == "F" or b == len(IS) - 1:
@@ -248,9 +248,11 @@ def error_detection(triplets):
                 elif P[b] != "·":
                     errors += [[0, "n", [T[b], T[b]]]]  # uncorreced no error
                 a = b + 1
-        if len(IS) < len(P):
-            for i in range(len(IS), len(P)):
-                errors += [[0, "o", [P[i], "~"]]]
+        # if len(IS) < len(P):
+        #     for i in range(len(IS), len(P)):
+        #         errors += [[0, "o", [P[i], "~"]]]
+        # remove the end 3 elements of "eof" in errors
+
         errors_per_triplet += [errors]
     # Returns a series of the errors/non-errors present in the user typed phrase.
     # The series contains items of this type [0, i, [~, z]] where:
@@ -608,10 +610,15 @@ if __name__ == "__main__":
     # user_input = "th quick brpown"
     # input_stream = "th quxck<<<ick brpown"
     # user_input = 'Was wondering if you and Natalie connected?'
-    # input_stream = 'Was c<wimedrting <<<<<<<<<<ondering if you and Natalie conce<<nected ?<<v<?'
+    # input_stream = 'Was c<wimedrting <<<<<<<<<<ondering if you and Natalie conce<<nected ?<<v< <?'
     # reference_sentence = "Was wondering if you and Natalie connected?"
     # test_phrase(reference_sentence, user_input, input_stream)
-    reference_sentence = 'lähetä paperit minulle'
-    user_input = 'lähetä paperit minulm'
-    input_stream = 'lähet<tä paperit minulm'
+    # reference_sentence = 'lähetä paperit minulle'
+    # user_input = 'lähetä paperit minulm'
+    # input_stream = 'lähet<tä paperit minulm'
+    # test_phrase(reference_sentence, user_input, input_stream)
+
+    input_stream = 'I was planning on calling you after I saw revisionh<s <s<.eof'
+    user_input = 'I was planning on calling you after I saw revisions.eof'
+    reference_sentence = 'I was planning on calling you after I saw your revisions.eof'
     test_phrase(reference_sentence, user_input, input_stream)
