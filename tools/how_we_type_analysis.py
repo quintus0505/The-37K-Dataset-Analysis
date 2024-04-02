@@ -81,7 +81,8 @@ if __name__ == '__main__':
             # while committed_sentence[-1] == ' ':
             #     committed_sentence = committed_sentence[:-1]
             reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
-            auto_corrected_word_count, auto_correct_count = parser.reformat_input(test_section_df)
+            auto_corrected_word_count, auto_correct_count, auto_correct_flag, \
+            immediate_error_correction_count, delayed_error_correction_count = parser.reformat_input(test_section_df)
             # reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
             # auto_corrected_word_count, auto_correct_count = get_input_stream(test_section_df)
             flagged_IS = flag_input_stream(reformatted_input)

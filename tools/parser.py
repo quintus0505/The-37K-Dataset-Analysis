@@ -33,6 +33,10 @@ class Parse(ABC):
 
         self.uncorrected_error_rates = []
         self.corrected_error_rates = []
+        self.immediate_error_correction_rates = []
+        self.delayed_error_correction_rates = []
+
+        self.auto_capitalization_count = 0
 
         self.test_section_count = 0
 
@@ -304,6 +308,12 @@ class Parse(ABC):
         bsp_count = 0
         bsp_index_list = []
         auto_corrected_word_count = 0
+
+        auto_correct_flag = False
+
+        immediate_error_correction_count = 0
+        delayed_error_correction_count = 0
+
         for index, row in test_section_df.iterrows():
             if row['INPUT'] != row['INPUT']:
                 continue
@@ -317,6 +327,9 @@ class Parse(ABC):
                     # normal typing after last input
                     reformatted_input += current_input[len(pre_input):]
                 elif current_input[:len(pre_input)].lower() == pre_input.lower():
+                    # auto capitalization
+                    self.auto_capitalization_count += 1
+                    auto_correct_flag = True
                     # first find the low or upper case different and correct it
                     for i in range(len(pre_input)):
                         if pre_input[i] != current_input[i]:
@@ -334,6 +347,9 @@ class Parse(ABC):
                     reformat_if_count += 1
                     reformat_f_count += 1
                     reformatted_input += current_input[len(pre_input):]
+
+                    delayed_error_correction_count += 1
+
                 else:
                     # move the cursor to the middle of the sentence and start typing,
                     # we just assume that every keystroke result in only one change
@@ -350,8 +366,13 @@ class Parse(ABC):
                                 i] + reformatted_input[i + 2 * bsp_count_before:]
                             reformat_if_count += 1
                             break
+
+                    delayed_error_correction_count += 1
             elif row['ITE_AUTO'] or len(current_input) == len(pre_input):
+                #  use auto correction
                 if not row['ITE_AUTO'] and current_input.lower() == pre_input.lower():
+                    if len(current_input) > 1:
+                        self.auto_capitalization_count += 1
                     for i in range(len(pre_input)):
                         if pre_input[i] != current_input[i]:
                             bsp_count_before = 0
@@ -363,12 +384,18 @@ class Parse(ABC):
                                 i] + reformatted_input[i + 1 + 2 * bsp_count_before:]
                             break
                     reformat_if_count += 1
+                    if len(current_input) == 1:
+                        auto_correct_flag = False
+                    else:
+                        auto_correct_flag = True
+
                     pre_input = current_input
+
+                    delayed_error_correction_count += 1
                     continue
-                # use auto correction, replace the last word in the reformatted_input
-                # with the last word in the current_input
-                # if more than one words in the current_input, only consider the last word
+
                 elif not row['ITE_AUTO'] and current_input[:-1] == pre_input[:-1]:
+                    # not detected as autocorrected but the log looks like that, maybe multiple input in one keystroke
                     bsp_count_before = 0
                     if bsp_index_list:
                         for bsp_index in bsp_index_list:
@@ -379,16 +406,35 @@ class Parse(ABC):
                                         current_input[-1] + \
                                         reformatted_input[len(current_input) - 1 + 2 * bsp_count_before:]
                     reformat_if_count += 1
+                    if len(current_input) == 1 or (current_input[-1] == '.' and pre_input[-1] == ' '):
+                        auto_correct_flag = False
+                    else:
+                        auto_correct_flag = True
+
                     pre_input = current_input
+
+                    immediate_error_correction_count += 1
+
                     continue
                 elif len(reformatted_input.split()) > 1:
+                    # replace the last word in the reformatted_input
+                    # with the last word in the current_input
+                    # if more than one words in the current_input, only consider the last word
                     reformatted_input = reformatted_input.rsplit(' ', 1)[0] + ' ' + current_input.rsplit(' ', 1)[1]
                     word_before_modification = pre_input.rsplit(' ', 1)[1]
                     word_after_modification = current_input.rsplit(' ', 1)[1]
+
+                    delayed_error_correction_count += 1
+                    auto_correct_flag = True
                 else:
+                    # if only one word is typed
                     reformatted_input = current_input
                     word_before_modification = pre_input
                     word_after_modification = current_input
+
+                    delayed_error_correction_count += 1
+                    auto_correct_flag = True
+
                 if_count, c_count, word_count = self.compute_if_c_count_for_auto_correction(word_before_modification,
                                                                                             word_after_modification)
                 reformat_if_count += if_count
@@ -397,13 +443,18 @@ class Parse(ABC):
                 auto_corrected_word_count += word_count
             else:
                 # using backspace to delete
-                # if the backspace is used to delete the last character
                 if len(pre_input) - len(current_input) == 1 and pre_input[:-1] == current_input:
+                    # if the backspace is used to delete the last character
                     reformatted_input += '<'
                     bsp_count += 1
                     bsp_index_list.append(len(current_input) - 1)
-                # find if the last word in the reformatted_input is not the same as the last word in the current_input
-                elif lev.distance(pre_input, current_input) == 1:
+
+                    immediate_error_correction_count += 1
+
+                elif lev.distance(pre_input, current_input) == 1:  # let us assume no miss detected autocorrection
+                    # or multiple input in one keystroke
+                    # find if the last word in the reformatted_input is not the same
+                    # as the last word in the current_input
                     # move the cursor to the middle of the sentence and use backspace to delete
                     for i in range(len(pre_input)):
                         if pre_input[i] != current_input[i]:
@@ -418,8 +469,11 @@ class Parse(ABC):
                             bsp_count += 1
                             bsp_index_list.append(i)
                             break
+                    delayed_error_correction_count += 1
                 elif pre_input.rsplit(' ', 1)[1] != current_input.rsplit(' ', 1)[1]:
+                    # miss detected autocorrection
                     # replace the last word in the reformatted_input with the last word in the current_input
+                    auto_correct_flag = True
                     reformatted_input = reformatted_input.rsplit(' ', 1)[0] + ' ' + current_input.rsplit(' ', 1)[1]
                     word_before_modification = pre_input.rsplit(' ', 1)[1]
                     word_after_modification = current_input.rsplit(' ', 1)[1]
@@ -430,6 +484,8 @@ class Parse(ABC):
                     reformat_c_count += c_count
                     reformat_f_count += 1
                     auto_corrected_word_count += word_count
+
+                    delayed_error_correction_count += 1
                 else:
                     # move the cursor to the middle of the sentence and use backspace to delete
                     for i in range(len(pre_input)):
@@ -445,8 +501,11 @@ class Parse(ABC):
                             bsp_count += 1
                             bsp_index_list.append(i)
                             break
+                    delayed_error_correction_count += 1
             pre_input = current_input
-        return reformatted_input, reformat_if_count, reformat_c_count, auto_corrected_word_count, reformat_f_count
+
+        return reformatted_input, reformat_if_count, reformat_c_count, auto_corrected_word_count, \
+               reformat_f_count, auto_correct_flag, immediate_error_correction_count, delayed_error_correction_count
 
     def compute_error_rate_correction(self, full_log_data, ite=None, keyboard=None, custom_logdata_path=None):
         """
@@ -461,11 +520,14 @@ class Parse(ABC):
         self.load_test_sections()
         self.load_sentences()
 
+        auto_corrected_test_section_count = 0
         abandoned_test_section_df = pd.DataFrame(columns=logdata_columns)
+
+        detected_autocorrected_test_section_ids = []
 
         for test_section_id in self.test_section_ids:
             iter_count += 1
-            # if test_section_id == 5072:
+            # if test_section_id == 2855:
             #     print("test_section_id: ", test_section_id)
             try:
                 test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
@@ -477,7 +539,14 @@ class Parse(ABC):
                     'SENTENCE'].values[0]
 
                 reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
-                auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
+                auto_corrected_word_count, auto_correct_count, auto_correct_flag, \
+                immediate_error_correction_count, delayed_error_correction_count = self.reformat_input(test_section_df)
+
+                if auto_correct_flag:
+                    auto_corrected_test_section_count += 1
+                    if ite is None:
+                        detected_autocorrected_test_section_ids.append(test_section_id)
+                    continue
 
                 target_sentence += 'eof'
                 committed_sentence += 'eof'
@@ -507,11 +576,16 @@ class Parse(ABC):
                 if_count += auto_corrected_if_count
                 fix_count += auto_correct_count
                 self.test_section_count += 1
+
                 uncorrected_error_rate = inf_count / (correct_count + inf_count + if_count)
                 corrected_error_rate = if_count / (correct_count + inf_count + if_count)
+                immediate_error_correction_rate = immediate_error_correction_count / len(committed_sentence)
+                delayed_error_correction_rate = delayed_error_correction_count / len(committed_sentence)
 
                 self.corrected_error_rates.append(corrected_error_rate)
                 self.uncorrected_error_rates.append(uncorrected_error_rate)
+                self.immediate_error_correction_rates.append(immediate_error_correction_rate)
+                self.delayed_error_correction_rates.append(delayed_error_correction_rate)
                 # if uncorrected_error_rate > 0.25 or corrected_error_rate > 0.25:
                 #     print("test_section_count: ", self.test_section_count)
                 #     print("test_section_id: ", test_section_id)
@@ -520,33 +594,50 @@ class Parse(ABC):
                 if iter_count % 1000 == 0:
                     print("Total test sections count", iter_count)
                     print("Selected test sections count: ", self.test_section_count)
+                    print("Detected auto corrected test section count: ", auto_corrected_test_section_count)
+                    print("Auto capitalization count: ", self.auto_capitalization_count)
                     print("test_section_id: ", test_section_id)
                     print("Corrected error rate mean: ", np.mean(self.corrected_error_rates))
                     print("Corrected error rate std: ", np.std(self.corrected_error_rates))
                     print("Uncorrected error rate mean: ", np.mean(self.uncorrected_error_rates))
                     print("Uncorrected error rate std: ", np.std(self.uncorrected_error_rates))
+                    print("Immediate error correction rate mean: ", np.mean(self.immediate_error_correction_rates))
+                    print("Immediate error correction rate std: ", np.std(self.immediate_error_correction_rates))
+                    print("Delayed error correction rate mean: ", np.mean(self.delayed_error_correction_rates))
+                    print("Delayed error correction rate std: ", np.std(self.delayed_error_correction_rates))
 
             except:
-                try:
-                    auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
-                except:
-                    # try:
-                    #     auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
-                    # except:
-                        pass
+                # try:
+                #     auto_corrected_word_count, auto_correct_count, auto_correct_flag = self.reformat_input(test_section_df)
+                # except:
+                # try:
+                #     auto_corrected_word_count, auto_correct_count, auto_correct_flag = self.reformat_input(test_section_df)
+                # except:
+                pass
                 # add current test section to abandoned_test_section_df
-                abandoned_test_section_df = abandoned_test_section_df.append(test_section_df)
+            abandoned_test_section_df = abandoned_test_section_df.append(test_section_df)
 
         print("Total test sections count", iter_count)
         print("Selected test sections count: ", self.test_section_count)
+        print("Detected auto corrected test section count: ", auto_corrected_test_section_count)
+        print("Auto capitalization count: ", self.auto_capitalization_count)
         print("Corrected error rate mean: ", np.mean(self.corrected_error_rates))
         print("Corrected error rate std: ", np.std(self.corrected_error_rates))
         print("Uncorrected error rate mean: ", np.mean(self.uncorrected_error_rates))
         print("Uncorrected error rate std: ", np.std(self.uncorrected_error_rates))
+        print("Immediate error correction rate mean: ", np.mean(self.immediate_error_correction_rates))
+        print("Immediate error correction rate std: ", np.std(self.immediate_error_correction_rates))
+        print("Delayed error correction rate mean: ", np.mean(self.delayed_error_correction_rates))
+        print("Delayed error correction rate std: ", np.std(self.delayed_error_correction_rates))
 
         # save the abandoned test sections to a csv file
         abandoned_test_section_df.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'abandoned_test_sections.csv'),
                                          index=False)
+        if ite is None:
+            detected_autocorrected_test_section_df = self.test_sections_dataframe[
+                self.test_sections_dataframe['TEST_SECTION_ID'].isin(detected_autocorrected_test_section_ids)]
+            detected_autocorrected_test_section_df.to_csv(
+                osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'detected_autocorrected_test_sections.csv'), index=False)
 
     def compute_modification(self, full_log_data, ite=None, keyboard=None, custom_logdata_path=None):
         """
@@ -828,7 +919,8 @@ class Parse(ABC):
                 reference_sentence = self.sentences_dataframe[
                     self.sentences_dataframe['SENTENCE_ID'] == sentence_id]['SENTENCE'].values[0]
                 reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
-                auto_corrected_word_count, auto_correct_count = self.reformat_input(test_section_df)
+                auto_corrected_word_count, auto_correct_count, auto_correct_flag, \
+                immediate_error_correction_count, delayed_error_correction_count = self.reformat_input(test_section_df)
                 wmr = wmr_df[wmr_df['TEST_SECTION_ID'] == test_section_id]['MODIFIED_WORD_COUNT'].values[0] / \
                       wmr_df[wmr_df['TEST_SECTION_ID'] == test_section_id]['WORD_COUNT'].values[0]
                 rebuild_df = rebuild_df.append(
