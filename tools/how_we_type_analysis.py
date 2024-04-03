@@ -69,25 +69,15 @@ if __name__ == '__main__':
     corrected_error_rates = []
     uncorrected_error_rates = []
     for test_section_id in test_section_ids:
-        # if test_section_id == 141:
-        #     print("test_section_id: ", test_section_id)
         iter_count += 1
         try:
-            # if test_section_id == 339:
-            #     print("test_section_id: ", test_section_id)
             test_section_df, committed_sentence = get_test_sections_df(test_section_id)
             sentence_id = int(test_section_df['SENTENCE_ID'].iloc[0])
             target_sentence = sentences_df[sentences_df['SENTENCE_ID'] == sentence_id]['SENTENCE'].iloc[0]
-            # while committed_sentence[-1] == ' ':
-            #     committed_sentence = committed_sentence[:-1]
             reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
             auto_corrected_word_count, auto_correct_count, auto_correct_flag, \
             immediate_error_correction_count, delayed_error_correction_count = parser.reformat_input(test_section_df)
-            # reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
-            # auto_corrected_word_count, auto_correct_count = get_input_stream(test_section_df)
             flagged_IS = flag_input_stream(reformatted_input)
-            # print("Phrase Details:")
-            # print("Flags: {}\nMoves: {}\nIS   : {}\n".format(*flagged_IS))
             unique_transposition_sets = []
             _, MSD = min_string_distance(target_sentence, committed_sentence)
 
@@ -127,24 +117,17 @@ if __name__ == '__main__':
 
             corrected_error_rates.append(corrected_error_rate)
             uncorrected_error_rates.append(uncorrected_error_rate)
-            # if uncorrected_error_rate > 0.25 or corrected_error_rate > 0.25:
-            #     print("test_section_count: ", self.test_section_count)
-            #     print("test_section_id: ", test_section_id)
-            #     print("Corrected error rate: ", corrected_error_rate)
-            #     print("Uncorrected error rate: ", uncorrected_error_rate)
             total_char_count += len(target_sentence)
             if iter_count % 1000 == 0:
                 print("test_section_count: ", test_section_count)
                 print("test_section_id: ", test_section_id)
-                uncorrected_error_rate = total_inf_count / len(target_sentence)
+                uncorrected_error_rate = total_inf_count / (total_correct_count + total_inf_count + total_if_count)
                 corrected_error_rate = total_if_count / (total_correct_count + total_inf_count + total_if_count)
                 print("Corrected error rate: ", corrected_error_rate)
                 print("Uncorrected error rate: ", uncorrected_error_rate)
 
         except:
             pass
-    # uncorrected_error_rate = total_inf_count / total_char_count
-    # corrected_error_rate = total_if_count / (total_correct_count + total_inf_count + total_if_count)
     uncorrected_error_rate = np.mean(uncorrected_error_rates)
     corrected_error_rate = np.mean(corrected_error_rates)
     print("Corrected error rate: ", corrected_error_rate)

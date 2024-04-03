@@ -5,8 +5,6 @@ from config import logdata_columns, DEFAULT_DATASETS_DIR, DEFAULT_VISUALIZATION_
     DEFAULT_FIGS_DIR, test_sections_columns
 import os.path as osp
 import numpy as np
-import Levenshtein
-from tools.string_analysis import *
 import Levenshtein as lev
 from tools.string_functions import *
 
@@ -164,14 +162,13 @@ class Parse(ABC):
 
         # committed sentence from the last row of the test section
         committed_sentence = test_section_df.iloc[-1]['INPUT']
+
+        # sometimes the last row is somehow problematic, we need to remove it and find the most likely commit
         if len(committed_sentence) < 4 or committed_sentence != committed_sentence or committed_sentence[-1] == ' ':
             for i in range(2, 5):
                 if len(committed_sentence) < 3 or committed_sentence[-1] == ' ':
                     test_section_df = test_section_df.iloc[:-1]
                     committed_sentence = test_section_df.iloc[-1]['INPUT']
-        # while committed_sentence[-1] == ' ':
-        #     committed_sentence = committed_sentence[:-1]
-        #     test_section_df.iloc[-1]['INPUT'] = committed_sentence
 
         return test_section_df, committed_sentence
 
@@ -231,14 +228,13 @@ class Parse(ABC):
                 self.test_section_count += 1
                 participant_id = self.test_sections_dataframe[
                     self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['PARTICIPANT_ID'].values[0]
-                # edit_distance = self.test_sections_dataframe[
-                #     self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['EDIT_DISTANCE'].values[0]
+
                 sentence_id = self.test_sections_dataframe[
                     self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['SENTENCE_ID'].values[0]
                 target_sentence = \
                     self.sentences_dataframe[self.sentences_dataframe['SENTENCE_ID'] == sentence_id]['SENTENCE'].values[
                         0]
-                edit_distance = Levenshtein.distance(committed_sentence, target_sentence)
+                edit_distance = lev.distance(committed_sentence, target_sentence)
                 error_rate = self.test_sections_dataframe[
                     self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['ERROR_RATE'].values[0]
                 self.edit_distance_visualization_df = self.edit_distance_visualization_df.append(
@@ -314,6 +310,17 @@ class Parse(ABC):
         immediate_error_correction_count = 0
         delayed_error_correction_count = 0
 
+        def get_bsp_adjustments(bsp_index_list, input_text):
+            bsp_adjustments = [0] * len(input_text)
+            bsp_running_total = 0
+            for bsp_index in bsp_index_list:
+                if bsp_index < len(bsp_adjustments):
+                    bsp_adjustments[bsp_index] = 1
+            for i, adjustment in enumerate(bsp_adjustments):
+                bsp_running_total += adjustment
+                bsp_adjustments[i] = bsp_running_total
+            return bsp_adjustments
+
         for index, row in test_section_df.iterrows():
             if row['INPUT'] != row['INPUT']:
                 continue
@@ -323,65 +330,51 @@ class Parse(ABC):
             if current_input == pre_input:
                 continue
             if len(current_input) > len(pre_input):
-                if current_input[:len(pre_input)] == pre_input:
-                    # normal typing after last input
-                    reformatted_input += current_input[len(pre_input):]
-                elif current_input[:len(pre_input)].lower() == pre_input.lower():
-                    # auto capitalization
-                    self.auto_capitalization_count += 1
-                    auto_correct_flag = True
-                    # first find the low or upper case different and correct it
-                    for i in range(len(pre_input)):
-                        if pre_input[i] != current_input[i]:
-                            # change the reformatted_input[i] to current_input[i]
-                            # count how many bsp before i
-                            bsp_count_before = 0
-                            if bsp_index_list:
-                                for bsp_index in bsp_index_list:
-                                    if bsp_index < i:
-                                        bsp_count_before += 1
-                            reformatted_input = reformatted_input[:i + 2 * bsp_count_before] + current_input[
-                                i] + reformatted_input[i + 2 * bsp_count_before + 1:]
-                            break
-                    # then add the rest of the input
-                    reformat_if_count += 1
-                    reformat_f_count += 1
-                    reformatted_input += current_input[len(pre_input):]
+                # Calculate the point where current_input diverges from pre_input
+                divergence_point = next((i for i, (c_pre, c_curr) in enumerate(zip(pre_input, current_input)) if
+                                         c_pre.lower() != c_curr.lower()), len(pre_input))
 
-                    delayed_error_correction_count += 1
+                # Calculate backspace count before the divergence point
+                bsp_count_before_divergence = sum(1 for bsp_index in bsp_index_list if bsp_index < divergence_point)
 
+                # Adjust for backspaces in the reformatted_input index
+                adjusted_index = divergence_point + 2 * bsp_count_before_divergence
+
+                if current_input[:len(pre_input)].lower() == pre_input.lower():
+                    if current_input[:len(pre_input)] != pre_input:
+                        # Auto capitalization detected
+                        self.auto_capitalization_count += 1
+                        auto_correct_flag = True
+
+                        # Correct the capitalization
+                        reformatted_input = reformatted_input[:adjusted_index] + current_input[
+                            divergence_point] + reformatted_input[adjusted_index + 1:]
+
+                        # Increment counters for auto-correction
+                        reformat_if_count += 1
+                        reformat_f_count += 1
+                        delayed_error_correction_count += 1
+
+                    # Handle normal typing or auto capitalization (adding the rest of the input)
+                    reformatted_input += current_input[len(pre_input):]
                 else:
-                    # move the cursor to the middle of the sentence and start typing,
-                    # we just assume that every keystroke result in only one change
-                    for i in range(len(pre_input)):
-                        if pre_input[i] != current_input[i]:
-                            # insert current_input[i] to the reformatted_input at the same position
-                            # TODO: Let's assume that all this action result in correct typing
-                            bsp_count_before = 0
-                            if bsp_index_list:
-                                for bsp_index in bsp_index_list:
-                                    if bsp_index < i:
-                                        bsp_count_before += 1
-                            reformatted_input = reformatted_input[:i + 2 * bsp_count_before] + current_input[
-                                i] + reformatted_input[i + 2 * bsp_count_before:]
-                            reformat_if_count += 1
-                            break
-
+                    # Handling mid-sentence typing or corrections
+                    reformatted_input = reformatted_input[:adjusted_index] + current_input[
+                        divergence_point] + reformatted_input[adjusted_index:]
+                    reformat_if_count += 1
                     delayed_error_correction_count += 1
+
             elif row['ITE_AUTO'] or len(current_input) == len(pre_input):
                 #  use auto correction
                 if not row['ITE_AUTO'] and current_input.lower() == pre_input.lower():
                     if len(current_input) > 1:
                         self.auto_capitalization_count += 1
+                    bsp_adjustments = get_bsp_adjustments(bsp_index_list, current_input)
                     for i in range(len(pre_input)):
                         if pre_input[i] != current_input[i]:
-                            bsp_count_before = 0
-                            if bsp_index_list:
-                                for bsp_index in bsp_index_list:
-                                    if bsp_index < i:
-                                        bsp_count_before += 1
-                            reformatted_input = reformatted_input[:i + 2 * bsp_count_before] + current_input[
-                                i] + reformatted_input[i + 1 + 2 * bsp_count_before:]
+                            adjusted_index = i + 2 * bsp_adjustments[i] if bsp_adjustments[i] else i
+                            reformatted_input = reformatted_input[:adjusted_index] + current_input[
+                                i] + reformatted_input[adjusted_index + 1:]
                             break
                     reformat_if_count += 1
                     if len(current_input) == 1:
@@ -396,11 +389,7 @@ class Parse(ABC):
 
                 elif not row['ITE_AUTO'] and current_input[:-1] == pre_input[:-1]:
                     # not detected as autocorrected but the log looks like that, maybe multiple input in one keystroke
-                    bsp_count_before = 0
-                    if bsp_index_list:
-                        for bsp_index in bsp_index_list:
-                            if bsp_index < len(current_input) - 1:
-                                bsp_count_before += 1
+                    bsp_count_before = sum(1 for bsp_index in bsp_index_list if bsp_index < len(current_input) - 1)
                     # replace the last character in the reformatted_input with the last character in the current_input
                     reformatted_input = reformatted_input[:len(current_input) - 2 + 2 * bsp_count_before] + \
                                         current_input[-1] + \
@@ -456,47 +445,45 @@ class Parse(ABC):
                     # find if the last word in the reformatted_input is not the same
                     # as the last word in the current_input
                     # move the cursor to the middle of the sentence and use backspace to delete
+                    bsp_adjustments = get_bsp_adjustments(bsp_index_list, pre_input)
                     for i in range(len(pre_input)):
                         if pre_input[i] != current_input[i]:
-                            bsp_count_before = 0
-                            if bsp_index_list:
-                                for bsp_index in bsp_index_list:
-                                    if bsp_index < i - 1:
-                                        bsp_count_before += 1
-                            reformatted_input = reformatted_input[:i + 2 * bsp_count_before] + '<' + reformatted_input[
-                                                                                                     i + 2 * bsp_count_before:]
+                            adjusted_index = i + 2 * bsp_adjustments[max(i - 1, 0)]
+                            reformatted_input = reformatted_input[:adjusted_index] + '<' + reformatted_input[
+                                                                                           adjusted_index:]
                             reformat_c_count += 1
                             bsp_count += 1
                             bsp_index_list.append(i)
                             break
                     delayed_error_correction_count += 1
                 elif pre_input.rsplit(' ', 1)[1] != current_input.rsplit(' ', 1)[1]:
-                    # miss detected autocorrection
-                    # replace the last word in the reformatted_input with the last word in the current_input
+                    # Miss detected auto-correction
                     auto_correct_flag = True
-                    reformatted_input = reformatted_input.rsplit(' ', 1)[0] + ' ' + current_input.rsplit(' ', 1)[1]
-                    word_before_modification = pre_input.rsplit(' ', 1)[1]
-                    word_after_modification = current_input.rsplit(' ', 1)[1]
+                    reformatted_input = reformatted_input.rsplit(' ', 1)[0] + ' ' + current_input.rsplit(' ', 1)[-1]
+                    word_before_modification = pre_input.rsplit(' ', 1)[-1]
+                    word_after_modification = current_input.rsplit(' ', 1)[-1]
                     if_count, c_count, word_count = self.compute_if_c_count_for_auto_correction(
-                        word_before_modification,
-                        word_after_modification)
+                        word_before_modification, word_after_modification)
                     reformat_if_count += if_count
                     reformat_c_count += c_count
                     reformat_f_count += 1
                     auto_corrected_word_count += word_count
-
                     delayed_error_correction_count += 1
                 else:
-                    # move the cursor to the middle of the sentence and use backspace to delete
+                    # Move the cursor to the middle of the sentence and use backspace to delete
+                    bsp_adjustments = [0] * len(pre_input)
+                    bsp_running_total = 0
+                    for bsp_index in bsp_index_list:
+                        if bsp_index < len(bsp_adjustments):
+                            bsp_adjustments[bsp_index] = 1
+                    for i, adjustment in enumerate(bsp_adjustments):
+                        bsp_running_total += adjustment
+                        bsp_adjustments[i] = bsp_running_total
                     for i in range(len(pre_input)):
                         if pre_input[i] != current_input[i]:
-                            bsp_count_before = 0
-                            if bsp_index_list:
-                                for bsp_index in bsp_index_list:
-                                    if bsp_index < i - 1:
-                                        bsp_count_before += 1
-                            reformatted_input = reformatted_input[:i + 2 * bsp_count_before] + '<' + reformatted_input[
-                                                                                                     i + 2 * bsp_count_before:]
+                            adjusted_index = i + 2 * bsp_adjustments[max(i - 1, 0)]
+                            reformatted_input = reformatted_input[:adjusted_index] + '<' + reformatted_input[
+                                                                                           adjusted_index:]
                             reformat_c_count += 1
                             bsp_count += 1
                             bsp_index_list.append(i)
@@ -586,11 +573,7 @@ class Parse(ABC):
                 self.uncorrected_error_rates.append(uncorrected_error_rate)
                 self.immediate_error_correction_rates.append(immediate_error_correction_rate)
                 self.delayed_error_correction_rates.append(delayed_error_correction_rate)
-                # if uncorrected_error_rate > 0.25 or corrected_error_rate > 0.25:
-                #     print("test_section_count: ", self.test_section_count)
-                #     print("test_section_id: ", test_section_id)
-                #     print("Corrected error rate: ", corrected_error_rate)
-                #     print("Uncorrected error rate: ", uncorrected_error_rate)
+
                 if iter_count % 1000 == 0:
                     print("Total test sections count", iter_count)
                     print("Selected test sections count: ", self.test_section_count)
@@ -615,7 +598,7 @@ class Parse(ABC):
                 # except:
                 pass
                 # add current test section to abandoned_test_section_df
-            abandoned_test_section_df = abandoned_test_section_df.append(test_section_df)
+                abandoned_test_section_df = abandoned_test_section_df.append(test_section_df)
 
         print("Total test sections count", iter_count)
         print("Selected test sections count: ", self.test_section_count)
@@ -634,8 +617,8 @@ class Parse(ABC):
         abandoned_test_section_df.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'abandoned_test_sections.csv'),
                                          index=False)
         if ite is None:
-            detected_autocorrected_test_section_df = self.test_sections_dataframe[
-                self.test_sections_dataframe['TEST_SECTION_ID'].isin(detected_autocorrected_test_section_ids)]
+            detected_autocorrected_test_section_df = self.logdata_dataframe[
+                self.logdata_dataframe['TEST_SECTION_ID'].isin(detected_autocorrected_test_section_ids)]
             detected_autocorrected_test_section_df.to_csv(
                 osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'detected_autocorrected_test_sections.csv'), index=False)
 
@@ -968,16 +951,17 @@ def compare_sentences(sentence1, sentence2):
 
 
 if __name__ == "__main__":
-    parser = Parse()
-    reference = "the quick brown fox"
-    typed = "th quix<ck brpown"
-    typed_2 = 'thhe<<e quic<<ckk<<< browwn<<<n foxx<<x'
-    result = 'the qu bron fox'
-    correct_count, inf_count, if_count, fix_count = parser.track_typing_errors(reference, typed_2)
-    print("Correct count: ", correct_count)
-    print("Incorrect-not-fix count: ", inf_count)
-    print("Incorrect fix count: ", if_count)
-    print("fix count: ", fix_count)
+    pass
+    # parser = Parse()
+    # reference = "the quick brown fox"
+    # typed = "th quix<ck brpown"
+    # typed_2 = 'thhe<<e quic<<ckk<<< browwn<<<n foxx<<x'
+    # result = 'the qu bron fox'
+
+    # print("Correct count: ", correct_count)
+    # print("Incorrect-not-fix count: ", inf_count)
+    # print("Incorrect fix count: ", if_count)
+    # print("fix count: ", fix_count)
     # logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'ac_logdata.csv')
     # parser.compute_wmr(full_log_data=True, ite=None, keyboard='Gboard', custom_logdata_path=logdata_path)
     #
