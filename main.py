@@ -1,3 +1,5 @@
+import pandas as pd
+from tqdm import tqdm
 from config import *
 from tools.data_loading import *
 from tools.parser import *
@@ -46,6 +48,44 @@ parser.add_argument('--error-rate', action="store_true", default=False,
                     help="compute corrected and uncorrected error rate")
 
 args = parser.parse_args()
+
+
+def split_by_finger_num(df):
+    # Function to clean participants data should be defined elsewhere
+    participants_dataframe = clean_participants_data()
+
+    one_finger_df = pd.DataFrame(columns=df.columns)
+    two_fingers_df = pd.DataFrame(columns=df.columns)
+
+    unique_test_sections = df['TEST_SECTION_ID'].unique()
+    total_unique_test_sections = len(unique_test_sections)
+    print("Total unique test sections:", total_unique_test_sections)
+
+    for test_section_id in tqdm(unique_test_sections, desc="Processing test sections"):
+        test_section_df = df[df['TEST_SECTION_ID'] == test_section_id]
+        participant_id = test_section_df['PARTICIPANT_ID'].values[0]
+
+        # Extract the finger usage associated with the participant ID
+        finger_use_value = participants_dataframe[
+            participants_dataframe['PARTICIPANT_ID'] == participant_id
+            ]['FINGERS'].values[0]
+
+        # Determine the finger use based on the extracted value
+        if 'both_hands' in finger_use_value:
+            finger_use = 'two_fingers'
+        elif 'right_hand' in finger_use_value or 'left_hand' in finger_use_value:
+            finger_use = 'one_finger'
+        elif 'thumbs' in finger_use_value:
+            finger_use = 'thumbs'
+        else:
+            finger_use = 'unknown'
+
+        if finger_use == 'one_finger':
+            one_finger_df = one_finger_df.append(test_section_df, ignore_index=True)
+        elif finger_use == 'two_fingers':
+            two_fingers_df = two_fingers_df.append(test_section_df, ignore_index=True)
+
+    return one_finger_df, two_fingers_df
 
 
 def get_name_str():
@@ -197,6 +237,23 @@ if __name__ == "__main__":
             plot_modification_vs_iki(iki_interval_df, save_file_name=modification_file_name.split('.')[0],
                                      interval_size=interval_size, origin_df=modification_visualization_df,
                                      visualize_mean=visualize_mean)
+            # avg = origin_df['MODIFICATION_COUNT'].sum() / origin_df['CHAR_COUNT'].sum() * 100
+            modification_visualization_df['AVG'] = modification_visualization_df['MODIFICATION_COUNT'] / \
+                                                   modification_visualization_df['CHAR_COUNT'] * 100
+            one_finger_modification_df, two_fingers_modification_df = split_by_finger_num(modification_visualization_df)
+            # print the mean, std of MODIFICATION of one finger
+            print("One finger MODIFICATION mean and std")
+            print("MODIFICATION: ", one_finger_modification_df['AVG'].mean(),
+                  one_finger_modification_df['AVG'].std())
+
+            # print the mean, std of MODIFICATION of two fingers
+            print("Two fingers MODIFICATION mean and std")
+            print("MODIFICATION: ", two_fingers_modification_df['AVG'].mean(),
+                  two_fingers_modification_df['AVG'].std())
+
+            print("Total MODIFICATION mean and std")
+            print("MODIFICATION: ", modification_visualization_df['AVG'].mean(),
+                  modification_visualization_df['AVG'].std())
 
         if args.wmr:
             wmr_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name),
@@ -210,6 +267,24 @@ if __name__ == "__main__":
 
             plot_num_vs_wmr(save_file_name='num_vs_wmr_' + name_info + 'logdata_visualization',
                             interval_size=0.005, origin_df=wmr_visualization_df, visualize_mean=visualize_mean)
+
+            one_finger_wmr_df, two_fingers_wmr_df = split_by_finger_num(wmr_visualization_df)
+            # print the mean, std of WMR, WPM, IKI of one finger
+            print("One finger WMR mean and std")
+            print("WMR: ", one_finger_wmr_df['WMR'].mean(), one_finger_wmr_df['WMR'].std())
+            print("WPM: ", one_finger_wmr_df['WPM'].mean(), one_finger_wmr_df['WPM'].std())
+            print("IKI: ", one_finger_wmr_df['IKI'].mean(), one_finger_wmr_df['IKI'].std())
+
+            # print the mean, std of WMR, WPM, IKI of two fingers
+            print("Two fingers WMR mean and std")
+            print("WMR: ", two_fingers_wmr_df['WMR'].mean(), two_fingers_wmr_df['WMR'].std())
+            print("WPM: ", two_fingers_wmr_df['WPM'].mean(), two_fingers_wmr_df['WPM'].std())
+            print("IKI: ", two_fingers_wmr_df['IKI'].mean(), two_fingers_wmr_df['IKI'].std())
+
+            print("Total WMR mean and std")
+            print("WMR: ", wmr_visualization_df['WMR'].mean(), wmr_visualization_df['WMR'].std())
+            print("WPM: ", wmr_visualization_df['WPM'].mean(), wmr_visualization_df['WPM'].std())
+            print("IKI: ", wmr_visualization_df['IKI'].mean(), wmr_visualization_df['IKI'].std())
 
         if ac_file_name and args.ac:
             ac_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, ac_file_name),
@@ -245,6 +320,9 @@ if __name__ == "__main__":
                                                       interval_size=interval_size)
             plot_age_vs_iki(iki_interval_df, save_file_name='age_' + name_info + 'logdata_visualization',
                             interval_size=interval_size, origin_df=age_visualization_df)
+            # remove the one with extreme IKI > 2000
+            age_visualization_df = age_visualization_df[age_visualization_df['IKI'] < 20000]
+            # print the IKI WPM mean and std for one finger and two fingers
         if args.num:
             # visualizing how many test section in each iki interval, based on wmr_logdata
             num_visualization_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name),
@@ -255,6 +333,15 @@ if __name__ == "__main__":
                                                       interval_size=interval_size)
             plot_num_vs_iki(iki_interval_df, save_file_name='num_' + name_info + 'logdata_visualization',
                             interval_size=interval_size, origin_df=num_visualization_df)
+            # print mean and std of IKI and WPM
+            print("mean and std of 'IKI' and 'WPM'")
+            # filter out the one with extreme IKI
+            # print those IKI > 2000
+            print(num_visualization_df[num_visualization_df['IKI'] > 2000])
+            num_visualization_df = num_visualization_df[num_visualization_df['IKI'] < 20000]
+
+            print(num_visualization_df[['IKI', 'WPM']].mean())
+            print(num_visualization_df[['IKI', 'WPM']].std())
 
     if args.visualize_by_edit_distance:
         visualize_mean = args.avg

@@ -460,7 +460,7 @@ def return_errors(target_phrase, user_phrase, input_stream, unique_transposition
     return best_set[0], best_set[1]
 
 
-def test_phrase(target_phrase, user_phrase, input_stream, verbose=True):
+def test_phrase(target_phrase, user_phrase, input_stream, verbose=False):
     flagged_IS = flag_input_stream(input_stream)
     print("Phrase Details:")
     print("Flags: {}\nMoves: {}\nIS   : {}\n".format(*flagged_IS))
@@ -476,8 +476,9 @@ def test_phrase(target_phrase, user_phrase, input_stream, verbose=True):
     all_error_lists = error_detection(all_edited_triplets)
 
     best_set, occurrences = optimal_error_set(all_error_lists, unique_transposition_sets)
-    INF, IF, C, F = count_component(all_error_lists[-1])
-    print("INF: {} | IF: {} | C: {} | F: {}".format(INF, IF, C, F))
+    # INF, IF, C, F, slips_info = count_component(all_error_lists[-1])
+    # print("INF: {} | IF: {} | C: {} | F: {}".format(INF, IF, C, F))
+    # print(slips_info)
     count = 0
     new_all_error_lists = []
     for error_list in all_error_lists:
@@ -485,7 +486,16 @@ def test_phrase(target_phrase, user_phrase, input_stream, verbose=True):
         print("Target: {}\nUser  : {}\n".format(alignments[count][0], alignments[count][1]))
         new_error_list = specify_errors(error_list)
         count += 1
+        INF, IF, C, F, slips_info = count_component(new_error_list)
 
+        uncorrected_error_rate = INF / len(user_phrase)
+        corrected_error_rate = IF / (C + INF + IF)
+
+
+        print("INF: {} | IF: {} | C: {} | F: {}".format(INF, IF, C, F))
+        print("uncorrected error rate: ", uncorrected_error_rate)
+        print("corrected error rate: ",corrected_error_rate)
+        print(slips_info)
         if verbose:
             print("Unmodified Errors")
             for error in error_list:
@@ -540,33 +550,40 @@ def get_input_stream(test_section_df):
 
 def count_component(error_list, verbose=False):
     INF, IF, C, F = 0, 0, 0, 0
+    slips_info = {'uncorrected': {'INS': 0, 'OMI': 0, 'SUB': 0, 'CAP': 0, 'TRA': 0},
+                  'corrected': {'INS': 0, 'OMI': 0, 'SUB': 0, 'CAP': 0, 'TRA': 0}}
     for error in error_list:
         if error[0] == 0:
             if error[1] == "i":
                 INF += 1
+                slips_info['uncorrected']['INS'] += 1
                 if verbose:
                     print(
                         "Uncorrected | Type: " + colored("INS-Error", "on_light_green") + " | Letters: {}".format(
                             error[2]))
             elif error[1] == "o":
                 INF += 1
+                slips_info['uncorrected']['OMI'] += 1
                 if verbose:
                     print("Uncorrected | Type: " + colored("OMI-Error", "on_light_magenta") + " | Letters: {}".format(
                         error[2]))
             elif error[1] == "s":
                 INF += 1
+                slips_info['uncorrected']['SUB'] += 1
                 if verbose:
                     print(
                         "Uncorrected | Type: " + colored("SUB-Error", "on_light_cyan") + " | Letters: {}".format(
                             error[2]))
             elif error[1] == "c":
                 INF += 1
+                slips_info['uncorrected']['CAP'] += 1
                 if verbose:
                     print(
                         "Uncorrected | Type: " + colored("CAP-Error", "on_light_blue") + " | Letters: {}".format(
                             error[2]))
             elif error[1] == "t":
                 INF += 1
+                slips_info['uncorrected']['TRA'] += 1
                 if verbose:
                     print(
                         "Uncorrected | Type: " + colored("TRA-Error", "on_light_white") + " | Letters: {}".format(
@@ -578,37 +595,47 @@ def count_component(error_list, verbose=False):
         else:
             if error[1] == "i":
                 IF += 1
+                slips_info['corrected']['INS'] += 1
                 if verbose:
                     print("Corrected   | Type: " + colored("INS-Error", "on_green") + " | Letters: {}".format(error[2]))
             elif error[1] == "o":
                 IF += 1
+                slips_info['corrected']['OMI'] += 1
                 if verbose:
                     print(
                         "Corrected   | Type: " + colored("OMI-Error", "on_magenta") + " | Letters: {}".format(error[2]))
             elif error[1] == "s":
                 IF += 1
+                slips_info['corrected']['SUB'] += 1
                 if verbose:
                     print("Corrected   | Type: " + colored("SUB-Error", "on_cyan") + " | Letters: {}".format(error[2]))
             elif error[1] == "c":
                 IF += 1
+                slips_info['corrected']['CAP'] += 1
                 if verbose:
                     print("Corrected   | Type: " + colored("CAP-Error", "on_blue") + " | Letters: {}".format(error[2]))
             elif error[1] == "t":
                 IF += 1
+                slips_info['corrected']['TRA'] += 1
                 if verbose:
                     print("Corrected   | Type: " + colored("TRA-Error", "on_white") + " | Letters: {}".format(error[2]))
             else:
                 if verbose:
                     print("Corrected   | Type: NON-Error | Letters: {}".format(error[2]))
                 # C += 1
-    return INF, IF, C, F
+    return INF, IF, C, F, slips_info
 
 
 if __name__ == "__main__":
     pass
+    reference_sentence = "the quick brown"
+    user_input = "th quick brpown"
+    input_stream = "th quxck<<<ick brpown"
+
     # reference_sentence = "the quick brown"
-    # user_input = "th quick brpown"
-    # input_stream = "th quxck<<<ick brpown"
+    # user_input = "the quikc brown"
+    # input_stream = "the quikc brown"
+
     # user_input = 'Was wondering if you and Natalie connected?'
     # input_stream = 'Was c<wimedrting <<<<<<<<<<ondering if you and Natalie conce<<nected ?<<v< <?'
     # reference_sentence = "Was wondering if you and Natalie connected?"
@@ -618,7 +645,7 @@ if __name__ == "__main__":
     # input_stream = 'lähet<tä paperit minulm'
     # test_phrase(reference_sentence, user_input, input_stream)
 
-    input_stream = 'I was planning on calling you after I saw revisionh<s <s<.eof'
-    user_input = 'I was planning on calling you after I saw revisions.eof'
-    reference_sentence = 'I was planning on calling you after I saw your revisions.eof'
+    # input_stream = 'I was planning on calling you after I swa revisionh<s <s<.eof'
+    # user_input = 'I was planning on calling you after I swa revisions.eof'
+    # reference_sentence = 'I was planning on calling you after I saw your revisions.eof'
     test_phrase(reference_sentence, user_input, input_stream)
