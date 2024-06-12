@@ -240,6 +240,9 @@ if __name__ == "__main__":
             # avg = origin_df['MODIFICATION_COUNT'].sum() / origin_df['CHAR_COUNT'].sum() * 100
             modification_visualization_df['AVG'] = modification_visualization_df['MODIFICATION_COUNT'] / \
                                                    modification_visualization_df['CHAR_COUNT'] * 100
+            iki_99 = modification_visualization_df['IKI'].quantile(0.99)
+            print("99% of IKI: ", iki_99)
+            modification_visualization_df = modification_visualization_df[modification_visualization_df['IKI'] < iki_99]
             one_finger_modification_df, two_fingers_modification_df = split_by_finger_num(modification_visualization_df)
             # print the mean, std of MODIFICATION of one finger
             print("One finger MODIFICATION mean and std")
@@ -267,7 +270,11 @@ if __name__ == "__main__":
 
             plot_num_vs_wmr(save_file_name='num_vs_wmr_' + name_info + 'logdata_visualization',
                             interval_size=0.005, origin_df=wmr_visualization_df, visualize_mean=visualize_mean)
-
+            # filter out those IKI out of 99%
+            # compute the 99% of IKI
+            iki_99 = wmr_visualization_df['IKI'].quantile(0.99)
+            print("99% of IKI: ", iki_99)
+            wmr_visualization_df = wmr_visualization_df[wmr_visualization_df['IKI'] < iki_99]
             one_finger_wmr_df, two_fingers_wmr_df = split_by_finger_num(wmr_visualization_df)
             # print the mean, std of WMR, WPM, IKI of one finger
             print("One finger WMR mean and std")
