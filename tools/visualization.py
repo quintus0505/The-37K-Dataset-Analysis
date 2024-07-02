@@ -606,7 +606,15 @@ def show_plot_info(df, save_file_name, y_label='WMR'):
         # print("Modification ratio: ", df['MODIFICATION_COUNT'].sum() / df['CHAR_COUNT'].sum())
     elif y_label == 'AGE':
         print("Plotting Age vs. Typing Interval for file: ", save_file_name)
-        # print("Average age: ", df['AGE'].mean())
+        print("Average age: ", df['AGE'].mean())
+        # print the num of data points 10-20, 20-30, 30-40, 40-50, 50-60, 60-70
+        print("Number of data points in each age group: ")
+        print("10-20: ", len(df[(df['AGE'] >= 10) & (df['AGE'] < 20)]))
+        print("20-30: ", len(df[(df['AGE'] >= 20) & (df['AGE'] < 30)]))
+        print("30-40: ", len(df[(df['AGE'] >= 30) & (df['AGE'] < 40)]))
+        print("40-50: ", len(df[(df['AGE'] >= 40) & (df['AGE'] < 50)]))
+        print("50-60: ", len(df[(df['AGE'] >= 50) & (df['AGE'] < 60)]))
+        print("60-70: ", len(df[(df['AGE'] >= 60) & (df['AGE'] < 70)]))
     elif y_label == 'NUM':
         print("Plotting Number vs. Typing Interval for file: ", save_file_name)
         # print("Total number: ", len(df))
