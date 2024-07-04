@@ -7,7 +7,7 @@ from tools.string_analysis import *
 from tools.string_functions import *
 import Levenshtein as lev
 
-HOW_WE_TYPE_DIR = osp.join(DEFAULT_ROOT_DIR, 'original_data', 'How_we_type_mobile_dataset_typing_log')
+HOW_WE_TYPE_DIR = osp.join(DEFAULT_ROOT_DIR, 'How_we_type_data', 'How_we_type_mobile_dataset_typing_log')
 LOG_DIR = osp.join(HOW_WE_TYPE_DIR, 'Typing_log')
 
 original_sentences_columns = ['sentence_n', 'sentence']

@@ -11,6 +11,11 @@ OPEN_PARTICIPANTS_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_participants.csv')
 OPEN_TEST_SECTIONS_PATH = osp.join(DEFAULT_DATASETS_DIR, 'open_test_sections.csv')
 OPEN_SENTENCES_PATH = osp.join(DEFAULT_DATASETS_DIR, 'sentences.csv')
 
+HOW_WE_TYPE_DATA_DIR = osp.join(DEFAULT_ROOT_DIR, 'How_we_type_data')
+HOW_WE_TYPE_FINGER_DATA_DIR = osp.join(HOW_WE_TYPE_DATA_DIR, 'How_we_type_mobile_dataset_finger_motion_capture')
+HOW_WE_TYPE_GAZE_DATA_DIR = osp.join(HOW_WE_TYPE_DATA_DIR, 'How_we_type_mobile_dataset_gaze')
+HOW_WE_TYPE_TYPING_LOG_DATA_DIR = osp.join(HOW_WE_TYPE_DATA_DIR, 'How_we_type_mobile_dataset_typing_log')
+
 participant_columns = ['PARTICIPANT_ID', 'BROWSER', 'BROWSER_LANGUAGE', 'DEVICE', 'SCREEN_W', 'SCREEN_H', 'AGE',
                        'GENDER',
                        'HAS_TAKEN_TYPING_COURSE', 'LAYOUT', 'WPM', 'ERROR_RATE', 'NATIVE_LANGUAGE', 'KEYBOARD_TYPE',
