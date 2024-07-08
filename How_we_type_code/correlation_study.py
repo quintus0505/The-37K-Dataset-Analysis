@@ -2,9 +2,12 @@ import os
 import os.path as osp
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 from config import how_we_type_key_coordinate, HOW_WE_TYPE_TYPING_LOG_DATA_DIR, HOW_WE_TYPE_GAZE_DATA_DIR, \
     HOW_WE_TYPE_FINGER_DATA_DIR
+from sklearn.preprocessing import normalize
+from scipy.stats import pearsonr
 
 # Provided configurations
 original_gaze_columns = ['subject_id', 'block', 'sentence_id', 'trialtime', 'x', 'y']
@@ -15,10 +18,29 @@ original_log_columns = ['systime', 'subject_id', 'block', 'sentence_id', 'trialt
 
 gaze_data_dir = osp.join(HOW_WE_TYPE_GAZE_DATA_DIR, 'Gaze')
 typing_log_dir = osp.join(HOW_WE_TYPE_TYPING_LOG_DATA_DIR, 'Typing_log')
-finger_data_dir = osp.join(HOW_WE_TYPE_FINGER_DATA_DIR, 'Finger_Motion_Capture')
 
 tail_offset = -300
 head_offset = 300
+
+
+# Function to filter out top and bottom 2.5% of values
+def filter_percentiles(df, column, lower_percentile=2.5, upper_percentile=97.5):
+    lower_bound = df[column].quantile(lower_percentile / 100)
+    upper_bound = df[column].quantile(upper_percentile / 100)
+    return df[(df[column] >= lower_bound) & (df[column] <= upper_bound)]
+
+
+# Desired ranges
+x_min, x_max = 501.5, 1942.5
+y_min, y_max = 100, 2760
+
+
+# Scaling function
+def scale_to_range(df, column, new_min, new_max):
+    old_min = df[column].min()
+    old_max = df[column].max()
+    df[column] = ((df[column] - old_min) / (old_max - old_min)) * (new_max - new_min) + new_min
+    return df
 
 
 def load_data(gaze_file, typing_file):
@@ -27,32 +49,60 @@ def load_data(gaze_file, typing_file):
     gaze_df['x'] = gaze_df['x'].astype(float)
     gaze_df['y'] = gaze_df['y'].astype(float)
     gaze_df['trialtime'] = gaze_df['trialtime'].astype(float).astype(int)
+    gaze_df['sentence_id'] = gaze_df['sentence_id'].astype(int)
 
     typinglog_df = pd.read_csv(typing_file, names=original_log_columns)
     typinglog_df = typinglog_df.iloc[1:]
     typinglog_df['touchx'] = typinglog_df['touchx'].astype(float)
     typinglog_df['touchy'] = typinglog_df['touchy'].astype(float)
     typinglog_df['trialtime'] = typinglog_df['trialtime'].astype(float).astype(int)
+    typinglog_df['sentence_id'] = typinglog_df['sentence_id'].astype(int)
+
+    typinglog_df['touchx'] += 501.5 - typinglog_df['touchx'].min()
+    typinglog_df['touchy'] += 1840 - typinglog_df['touchy'].min()
 
     return gaze_df, typinglog_df
 
 
+def normalize_coordinates(df, x_col, y_col):
+    df[[x_col, y_col]] = normalize(df[[x_col, y_col]])
+    return df
+
+
 def compute_distance(gaze_df, typinglog_df):
+    # Normalize coordinates
+    # for sentence_id, gaze_group in gaze_df.groupby('sentence_id'):
+    #     gaze_group = filter_percentiles(gaze_group, 'x', lower_percentile=5, upper_percentile=95)
+    #     gaze_df = filter_percentiles(gaze_group, 'y', lower_percentile=5, upper_percentile=95)
+    #
+    #     gaze_group = scale_to_range(gaze_group, 'x', x_min, x_max)
+    #     gaze_df = scale_to_range(gaze_group, 'y', y_min, y_max)
+
+    gaze_df = normalize_coordinates(gaze_df, 'x', 'y')
+    typinglog_df = normalize_coordinates(typinglog_df, 'touchx', 'touchy')
     distances = {}
 
     for sentence_id, group in typinglog_df.groupby('sentence_id'):
         gaze_group = gaze_df[gaze_df['sentence_id'] == sentence_id]
-
+        # gaze_group = filter_percentiles(gaze_group, 'x', lower_percentile=5, upper_percentile=95)
+        # gaze_group = filter_percentiles(gaze_group, 'y', lower_percentile=5, upper_percentile=95)
+        #
+        # gaze_group = scale_to_range(gaze_group, 'x', x_min, x_max)
+        # gaze_group = scale_to_range(gaze_group, 'y', y_min, y_max)
+        # try:
+        #     gaze_group = normalize_coordinates(gaze_group, 'x', 'y')
+        # except:
+        #     continue
         for _, typing_row in group.iterrows():
             trialtime = typing_row['trialtime']
             window_gaze_df = gaze_group[(gaze_group['trialtime'] >= trialtime + tail_offset) &
                                         (gaze_group['trialtime'] <= trialtime + head_offset)]
 
             for _, gaze_row in window_gaze_df.iterrows():
-                if gaze_row['y'] < 1500:
+                if gaze_row['y'] < 0.5:
                     continue
                 offset = gaze_row['trialtime'] - trialtime
-                dist = np.linalg.norm([gaze_row['x'] - 500 - typing_row['touchx'], gaze_row['y'] - typing_row['touchy']])
+                dist = np.linalg.norm([gaze_row['x'] - typing_row['touchx'], gaze_row['y'] - typing_row['touchy']])
                 if offset not in distances:
                     distances[offset] = []
                 distances[offset].append(dist)
@@ -60,18 +110,73 @@ def compute_distance(gaze_df, typinglog_df):
     return distances
 
 
+def compute_pearson_correlation(gaze_df, typinglog_df):
+    # Normalize coordinates
+    # gaze_df = normalize_coordinates(gaze_df, 'x', 'y')
+    # typinglog_df = normalize_coordinates(typinglog_df, 'touchx', 'touchy')
+
+    correlations = []
+
+    for sentence_id, group in typinglog_df.groupby('sentence_id'):
+        gaze_group = gaze_df[gaze_df['sentence_id'] == sentence_id]
+
+        for _, typing_row in group.iterrows():
+            try:
+                trialtime = typing_row['trialtime']
+                closest_gaze_row = gaze_group.iloc[(gaze_group['trialtime'] - trialtime).abs().argmin()]
+                correlations.append(
+                    (closest_gaze_row['x'], closest_gaze_row['y'], typing_row['touchx'], typing_row['touchy']))
+            except:
+                break
+
+    if correlations:
+        correlations_df = pd.DataFrame(correlations, columns=['gaze_x', 'gaze_y', 'touchx', 'touchy'])
+        corr_x = pearsonr(correlations_df['gaze_x'], correlations_df['touchx'])[0]
+        corr_y = pearsonr(correlations_df['gaze_y'], correlations_df['touchy'])[0]
+    else:
+        corr_x = corr_y = np.nan
+    if corr_x < 0:
+        corr_x = 0
+    return corr_x, corr_y
+
+
 def plot_distances(avg_distances):
     offsets = sorted(avg_distances.keys())
     avg_dists = [avg_distances[offset] for offset in offsets]
 
+    if not avg_dists:
+        print("No valid data to plot.")
+        return
+
+    # Calculate rolling mean and standard deviation
+    rolling_mean = pd.Series(avg_dists, dtype=float).rolling(window=10, min_periods=1).mean()
+    rolling_std = pd.Series(avg_dists, dtype=float).rolling(window=10, min_periods=1).std()
+
+    # Remove NaN values for plotting limits
+    rolling_mean = rolling_mean.dropna()
+    rolling_std = rolling_std.dropna()
+
+    # Ensure no NaN values in the max calculation
+    if rolling_mean.empty or rolling_std.empty:
+        print("No valid data after rolling mean/std calculation.")
+        return
+
+    max_ylim = max((rolling_mean + rolling_std).dropna())
+
     plt.figure(figsize=(10, 6))
-    plt.plot(offsets, avg_dists, label='Average Distance', color='blue')
+
+    # Plot the rolling mean
+    sns.lineplot(x=offsets, y=rolling_mean, label='Average Normalized Distance', color='blue')
+
+    # Plot the confidence interval (rolling std deviation)
+    plt.fill_between(offsets, rolling_mean - rolling_std, rolling_mean + rolling_std, color='blue', alpha=0.3)
+
     plt.axhline(0, color='black', linestyle='--', linewidth=0.5)
     plt.xlabel('Time Interval (ms)')
-    plt.ylabel('Average Distance (pixels)')
+    plt.ylabel('Average Normalized Distance')
+    plt.ylim(0, max_ylim)
     plt.legend()
-    plt.title('Average Distance between Gaze Position and Typed Position')
-    plt.grid(True)
+    plt.title('Average Normalized Distance between Gaze Position and Typed Position')
     plt.show()
 
 
@@ -82,12 +187,23 @@ def process_all_files():
                     f.startswith('gaze') and f.endswith('_1.csv')]
 
     all_distances = {}
+    all_correlations_x = []
+    all_correlations_y = []
 
     for gaze_file, typing_file in zip(gaze_files, typing_files):
         if osp.exists(typing_file):
-            print("Processing files: ", gaze_file, typing_file)
+            # gaze_129_1.csv, get 129_1
+            csv_num = gaze_file.split('_')[-2] + '_' + gaze_file.split('_')[-1].split('.')[0]
+            print("Processing files: ", csv_num)
+            # print("Processing files: ", gaze_file, typing_file)
             gaze_df, typinglog_df = load_data(gaze_file, typing_file)
             distances = compute_distance(gaze_df, typinglog_df)
+            corr_x, corr_y = compute_pearson_correlation(gaze_df, typinglog_df)
+
+            print(
+                f"Correlation X: {corr_x}, Correlation Y: {corr_y}")
+            all_correlations_x.append(corr_x)
+            all_correlations_y.append(corr_y)
 
             for offset, dists in distances.items():
                 if offset not in all_distances:
@@ -96,6 +212,13 @@ def process_all_files():
 
     final_avg_distances = {offset: np.nanmean(all_distances[offset]) for offset in all_distances}
     plot_distances(final_avg_distances)
+
+    # Compute overall correlations
+    overall_correlation_x = np.nanmean(all_correlations_x)
+    overall_correlation_y = np.nanmean(all_correlations_y)
+
+    print(f"Overall Correlation X: {overall_correlation_x}")
+    print(f"Overall Correlation Y: {overall_correlation_y}")
 
 
 if __name__ == '__main__':
