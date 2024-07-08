@@ -8,6 +8,7 @@ from config import how_we_type_key_coordinate, HOW_WE_TYPE_TYPING_LOG_DATA_DIR, 
     HOW_WE_TYPE_FINGER_DATA_DIR
 from sklearn.preprocessing import normalize
 from scipy.stats import pearsonr
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Provided configurations
 original_gaze_columns = ['subject_id', 'block', 'sentence_id', 'trialtime', 'x', 'y']
@@ -58,8 +59,8 @@ def load_data(gaze_file, typing_file):
     typinglog_df['trialtime'] = typinglog_df['trialtime'].astype(float).astype(int)
     typinglog_df['sentence_id'] = typinglog_df['sentence_id'].astype(int)
 
-    typinglog_df['touchx'] += 501.5 - typinglog_df['touchx'].min()
-    typinglog_df['touchy'] += 1840 - typinglog_df['touchy'].min()
+    # typinglog_df['touchx'] += 501.5 - typinglog_df['touchx'].min()
+    # typinglog_df['touchy'] += 1840 - typinglog_df['touchy'].min()
 
     return gaze_df, typinglog_df
 
@@ -69,53 +70,51 @@ def normalize_coordinates(df, x_col, y_col):
     return df
 
 
-def compute_distance(gaze_df, typinglog_df):
-    # Normalize coordinates
-    # for sentence_id, gaze_group in gaze_df.groupby('sentence_id'):
-    #     gaze_group = filter_percentiles(gaze_group, 'x', lower_percentile=5, upper_percentile=95)
-    #     gaze_df = filter_percentiles(gaze_group, 'y', lower_percentile=5, upper_percentile=95)
-    #
-    #     gaze_group = scale_to_range(gaze_group, 'x', x_min, x_max)
-    #     gaze_df = scale_to_range(gaze_group, 'y', y_min, y_max)
+def compute_distance_and_cosine_similarity(gaze_df, typinglog_df):
+    # Filter and scale coordinates
+    for sentence_id, gaze_group in gaze_df.groupby('sentence_id'):
+        gaze_group = filter_percentiles(gaze_group, 'x', lower_percentile=5, upper_percentile=95)
+        gaze_group = filter_percentiles(gaze_group, 'y', lower_percentile=5, upper_percentile=95)
+        gaze_group = scale_to_range(gaze_group, 'x', x_min, x_max)
+        gaze_df = scale_to_range(gaze_group, 'y', y_min, y_max)
 
     gaze_df = normalize_coordinates(gaze_df, 'x', 'y')
     typinglog_df = normalize_coordinates(typinglog_df, 'touchx', 'touchy')
+
     distances = {}
+    similarities = {}
 
     for sentence_id, group in typinglog_df.groupby('sentence_id'):
         gaze_group = gaze_df[gaze_df['sentence_id'] == sentence_id]
-        # gaze_group = filter_percentiles(gaze_group, 'x', lower_percentile=5, upper_percentile=95)
-        # gaze_group = filter_percentiles(gaze_group, 'y', lower_percentile=5, upper_percentile=95)
-        #
-        # gaze_group = scale_to_range(gaze_group, 'x', x_min, x_max)
-        # gaze_group = scale_to_range(gaze_group, 'y', y_min, y_max)
-        # try:
-        #     gaze_group = normalize_coordinates(gaze_group, 'x', 'y')
-        # except:
-        #     continue
+
         for _, typing_row in group.iterrows():
             trialtime = typing_row['trialtime']
             window_gaze_df = gaze_group[(gaze_group['trialtime'] >= trialtime + tail_offset) &
                                         (gaze_group['trialtime'] <= trialtime + head_offset)]
 
             for _, gaze_row in window_gaze_df.iterrows():
-                if gaze_row['y'] < 0.5:
-                    continue
                 offset = gaze_row['trialtime'] - trialtime
                 dist = np.linalg.norm([gaze_row['x'] - typing_row['touchx'], gaze_row['y'] - typing_row['touchy']])
+                gaze_vec = np.array([gaze_row['x'], gaze_row['y']]).reshape(1, -1)
+                touch_vec = np.array([typing_row['touchx'], typing_row['touchy']]).reshape(1, -1)
+                sim = cosine_similarity(gaze_vec, touch_vec)[0][0]
+
                 if offset not in distances:
                     distances[offset] = []
                 distances[offset].append(dist)
 
-    return distances
+                if offset not in similarities:
+                    similarities[offset] = []
+                similarities[offset].append(sim)
+
+    return distances, similarities
 
 
-def compute_pearson_correlation(gaze_df, typinglog_df):
-    # Normalize coordinates
-    # gaze_df = normalize_coordinates(gaze_df, 'x', 'y')
-    # typinglog_df = normalize_coordinates(typinglog_df, 'touchx', 'touchy')
-
+def compute_pearson_correlation_and_cosine_similarity(gaze_df, typinglog_df):
     correlations = []
+    cosine_similarities = []
+    gaze_df = normalize_coordinates(gaze_df, 'x', 'y')
+    typinglog_df = normalize_coordinates(typinglog_df, 'touchx', 'touchy')
 
     for sentence_id, group in typinglog_df.groupby('sentence_id'):
         gaze_group = gaze_df[gaze_df['sentence_id'] == sentence_id]
@@ -126,18 +125,69 @@ def compute_pearson_correlation(gaze_df, typinglog_df):
                 closest_gaze_row = gaze_group.iloc[(gaze_group['trialtime'] - trialtime).abs().argmin()]
                 correlations.append(
                     (closest_gaze_row['x'], closest_gaze_row['y'], typing_row['touchx'], typing_row['touchy']))
+
+                gaze_vec = np.array([closest_gaze_row['x'], closest_gaze_row['y']]).reshape(1, -1)
+                touch_vec = np.array([typing_row['touchx'], typing_row['touchy']]).reshape(1, -1)
+                cosine_sim = cosine_similarity(gaze_vec, touch_vec)[0][0]
+                cosine_similarities.append(cosine_sim)
+
             except:
-                break
+                continue
 
     if correlations:
         correlations_df = pd.DataFrame(correlations, columns=['gaze_x', 'gaze_y', 'touchx', 'touchy'])
-        corr_x = pearsonr(correlations_df['gaze_x'], correlations_df['touchx'])[0]
-        corr_y = pearsonr(correlations_df['gaze_y'], correlations_df['touchy'])[0]
+        corr_matrix = correlations_df[['gaze_x', 'gaze_y', 'touchx', 'touchy']].corr()
+        corr_xy_touch = (corr_matrix.loc['gaze_x', 'touchx'] + corr_matrix.loc['gaze_y', 'touchy']) / 2
+        corr_x = corr_matrix.loc['gaze_x', 'touchx']
+        corr_y = corr_matrix.loc['gaze_y', 'touchy']
     else:
-        corr_x = corr_y = np.nan
-    if corr_x < 0:
-        corr_x = 0
-    return corr_x, corr_y
+        corr_xy_touch = np.nan
+        corr_x = np.nan
+        corr_y = np.nan
+
+    avg_cosine_similarity = np.nanmean(cosine_similarities) if cosine_similarities else np.nan
+
+    return corr_xy_touch, corr_x, corr_y, avg_cosine_similarity
+
+
+def plot_similarities(avg_similarities):
+    offsets = sorted(avg_similarities.keys())
+    avg_sims = [avg_similarities[offset] for offset in offsets]
+
+    if not avg_sims:
+        print("No valid data to plot.")
+        return
+
+    # Calculate rolling mean and standard deviation
+    rolling_mean = pd.Series(avg_sims, dtype=float).rolling(window=10, min_periods=1).mean()
+    rolling_std = pd.Series(avg_sims, dtype=float).rolling(window=10, min_periods=1).std()
+
+    # Remove NaN values for plotting limits
+    rolling_mean = rolling_mean.dropna()
+    rolling_std = rolling_std.dropna()
+
+    # Ensure no NaN values in the max calculation
+    if rolling_mean.empty or rolling_std.empty:
+        print("No valid data after rolling mean/std calculation.")
+        return
+
+    max_ylim = max((rolling_mean + rolling_std).dropna())
+
+    plt.figure(figsize=(10, 6))
+
+    # Plot the rolling mean
+    sns.lineplot(x=offsets, y=rolling_mean, label='Average Normalized Distance', color='blue')
+
+    # Plot the confidence interval (rolling std deviation)
+    plt.fill_between(offsets, rolling_mean - rolling_std, rolling_mean + rolling_std, color='blue', alpha=0.3)
+
+    plt.axhline(0, color='black', linestyle='--', linewidth=0.5)
+    plt.xlabel('Time Interval (ms)')
+    plt.ylabel('Average Similarities')
+    plt.ylim(0, max_ylim)
+    plt.legend()
+    plt.title('Average Similarities between Gaze Position and Typed Position')
+    plt.show()
 
 
 def plot_distances(avg_distances):
@@ -187,8 +237,11 @@ def process_all_files():
                     f.startswith('gaze') and f.endswith('_1.csv')]
 
     all_distances = {}
+    all_similarities = {}
+    all_correlations_xy_touch = []
     all_correlations_x = []
     all_correlations_y = []
+    all_cosine_similarities = []
 
     for gaze_file, typing_file in zip(gaze_files, typing_files):
         if osp.exists(typing_file):
@@ -197,28 +250,49 @@ def process_all_files():
             print("Processing files: ", csv_num)
             # print("Processing files: ", gaze_file, typing_file)
             gaze_df, typinglog_df = load_data(gaze_file, typing_file)
-            distances = compute_distance(gaze_df, typinglog_df)
-            corr_x, corr_y = compute_pearson_correlation(gaze_df, typinglog_df)
+            distances, similarities = compute_distance_and_cosine_similarity(gaze_df, typinglog_df)
+            # corr_x, corr_y = compute_pearson_correlation(gaze_df, typinglog_df)
+            #
+            # print(
+            #     f"Correlation X: {corr_x}, Correlation Y: {corr_y}")
+            # all_correlations_x.append(corr_x)
+            # all_correlations_y.append(corr_y)
+            corr_xy_touch, corr_x, corr_y, avg_cosine_similarity = compute_pearson_correlation_and_cosine_similarity(
+                gaze_df, typinglog_df)
+            print(f"Correlation XY Touch: {corr_xy_touch}")
+            print(f"Correlation X: {corr_x}")
+            print(f"Correlation Y: {corr_y}")
+            print(f"Cosine Similarity: {avg_cosine_similarity}")
 
-            print(
-                f"Correlation X: {corr_x}, Correlation Y: {corr_y}")
+            all_correlations_xy_touch.append(corr_xy_touch)
             all_correlations_x.append(corr_x)
             all_correlations_y.append(corr_y)
+            all_cosine_similarities.append(avg_cosine_similarity)
 
             for offset, dists in distances.items():
                 if offset not in all_distances:
                     all_distances[offset] = []
                 all_distances[offset].extend(dists)
 
+            for offset, sims in similarities.items():
+                if offset not in all_similarities:
+                    all_similarities[offset] = []
+                all_similarities[offset].extend(sims)
+
     final_avg_distances = {offset: np.nanmean(all_distances[offset]) for offset in all_distances}
+    final_avg_similarities = {offset: np.nanmean(all_similarities[offset]) for offset in all_similarities}
     plot_distances(final_avg_distances)
+    plot_similarities(final_avg_similarities)
 
     # Compute overall correlations
+    overall_correlation_xy_touch = np.nanmean(all_correlations_xy_touch)
     overall_correlation_x = np.nanmean(all_correlations_x)
     overall_correlation_y = np.nanmean(all_correlations_y)
-
+    overall_cosine_similarity = np.nanmean(all_cosine_similarities)
+    print(f"Overall Correlation XY Touch: {overall_correlation_xy_touch}")
     print(f"Overall Correlation X: {overall_correlation_x}")
     print(f"Overall Correlation Y: {overall_correlation_y}")
+    print(f"Overall Cosine Similarity: {overall_cosine_similarity}")
 
 
 if __name__ == '__main__':

@@ -101,27 +101,12 @@ def visualize_data():
                                                   fill=None, edgecolor='blue', linewidth=1))
                 plt.text((coord[0] + coord[2]) / 2, (coord[1] + coord[3]) / 2, key,
                          horizontalalignment='center', verticalalignment='center', color='blue')
-            # group['x'] = 501.5 + (group['x'] - group['x'].min()) * (1942.5 - 501.5) / (
-            #             group['x'].max() - group['x'].min())
-            # # group['x'] = group['x'] * 1942.5 / group['x'].max()
-            # # group['y'] = group['y'] * 2760 / group['y'].max()
-            # group['y'] = 500 + (group['y'] - group['y'].min()) * (2760 - 500) / (
-            #             group['y'].max() - group['y'].min())
             # Plot gaze trail
             plt.plot(group['x'], group['y'], color='red', marker='o', linestyle='-', markersize=2, linewidth=0.5)
 
             # Reshape and plot typing trail
             finger_group = finger_df[finger_df['sentence_id'] == sentence_id].copy()
             if not finger_group.empty:
-                # finger_group.loc[:, 'x1'] = 501.5 + (finger_group['x1'] - finger_group['x1'].min()) * (
-                #             1942.5 - 501.5) / (finger_group['x1'].max() - finger_group['x1'].min())
-                # finger_group.loc[:, 'x2'] = 501.5 + (finger_group['x2'] - finger_group['x2'].min()) * (
-                #             1942.5 - 501.5) / (finger_group['x2'].max() - finger_group['x2'].min())
-                # finger_group.loc[:, 'y1'] = 1840 + (finger_group['y1'] - finger_group['y1'].min()) * (
-                #             2760 - 1840) / (finger_group['y1'].max() - finger_group['y1'].min())
-                # finger_group.loc[:, 'y2'] = 1840 + (finger_group['y2'] - finger_group['y2'].min()) * (
-                #             2760 - 1840) / (finger_group['y2'].max() - finger_group['y2'].min())
-
                 plt.plot(finger_group['x1'], finger_group['y1'], color='green', marker='o', linestyle='-',
                          markersize=2, linewidth=0.5, label='Finger 1')
                 plt.plot(finger_group['x2'], finger_group['y2'], color='purple', marker='o', linestyle='-',
