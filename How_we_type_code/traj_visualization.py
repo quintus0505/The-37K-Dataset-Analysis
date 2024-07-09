@@ -26,6 +26,9 @@ def filter_percentiles(df, column, lower_percentile=2.5, upper_percentile=97.5):
 x_min, x_max = 501.5, 1942.5
 y_min, y_max = 100, 2760
 
+x_min -= 501.5
+x_max -= 501.5
+
 
 # Scaling function
 def scale_to_range(df, column, new_min, new_max):
@@ -44,10 +47,36 @@ def get_key_position(x, y):
     return '-'
 
 
+def reshaping_to_1080_1920(df, x_col, y_col, finger=False):
+    # get the 99% max value of x and y
+    if not finger:
+        df_max_x = df[x_col].max()
+        df_max_y = df[y_col].max()
+        df[x_col] = df[x_col] * 1080 / df_max_x
+        df[y_col] = df[y_col] * 1920 / df_max_y
+    else:
+        df_max_x = df[x_col].quantile(0.87)
+        df_max_y = df[y_col].quantile(0.85)
+        # removing those values that are not in the range of the keyboard
+        df = df[df[x_col] <= df[x_col].quantile(0.87)]
+        df = df[df[y_col] <= df[y_col].quantile(0.85)]
+        df[x_col] = df[x_col] * 1080 / df_max_x
+        df[y_col] = df[y_col] * 1920 / df_max_y
+    return df
+
+
 def visualize_data():
     GAZE_DATA_DIR = osp.join(HOW_WE_TYPE_GAZE_DATA_DIR, 'Gaze')
     TYPY_DATA_DIR = osp.join(HOW_WE_TYPE_FINGER_DATA_DIR, 'Finger_Motion_Capture')
     TYPING_LOG_DIR = osp.join(HOW_WE_TYPE_TYPING_LOG_DATA_DIR, 'Typing_log')
+
+    # reshape the keys to x (0, 1080) y (0, 1920)
+    for key, coord in how_we_type_key_coordinate.items():
+        how_we_type_key_coordinate[key] = [coord[0] - 501.5, coord[1], coord[2] - 501.5, coord[3]]
+        # reshape the keys to x (0, 1080) y (0, 1920)
+    for key, coord in how_we_type_key_coordinate.items():
+        how_we_type_key_coordinate[key] = [coord[0] * 1080 / 1441, coord[1] * 1920 / 2760, coord[2] * 1080 / 1441,
+                                           coord[3] * 1920 / 2760]
 
     for file in os.listdir(GAZE_DATA_DIR):
         print("Processing file: ", file)
@@ -79,13 +108,21 @@ def visualize_data():
         typinglog_df['trialtime'] = typinglog_df['trialtime'].astype(float).astype(int)
         typinglog_df['sentence_id'] = typinglog_df['sentence_id'].astype(int)
 
-        typinglog_df.loc[:, 'touchx'] += 501.5 - typinglog_df['touchx'].min()
+        # typinglog_df.loc[:, 'touchx'] += 501.5 - typinglog_df['touchx'].min()
         typinglog_df.loc[:, 'touchy'] += 1840 - typinglog_df['touchy'].min()
+        typinglog_df = reshaping_to_1080_1920(typinglog_df, 'touchx', 'touchy')
 
         finger_df = pd.read_csv(finger_path, names=original_finger_columns)
         finger_df = finger_df.iloc[1:]
         finger_df[['x1', 'y1', 'x2', 'y2']] = finger_df[['x1', 'y1', 'x2', 'y2']].astype(float)
         finger_df['sentence_id'] = finger_df['sentence_id'].astype(int)
+
+        finger_df.loc[:, 'x1'] -= 501.5
+        finger_df.loc[:, 'x2'] = finger_df['x2'].apply(lambda x: x - 501.5 if x != 0 else 0)
+
+        finger_df = reshaping_to_1080_1920(finger_df, 'x1', 'y1', finger=True)
+        if finger_df['x2'].max() != 0:
+            finger_df = reshaping_to_1080_1920(finger_df, 'x2', 'y2', finger=True)
 
         sentence_groups = gaze_df.groupby('sentence_id')
         for sentence_id, group in sentence_groups:
@@ -95,6 +132,8 @@ def visualize_data():
 
             group = scale_to_range(group, 'x', x_min, x_max)
             group = scale_to_range(group, 'y', y_min, y_max)
+
+            group = reshaping_to_1080_1920(group, 'x', 'y')
             # Draw the keyboard layout
             for key, coord in how_we_type_key_coordinate.items():
                 plt.gca().add_patch(plt.Rectangle((coord[0], coord[1]), coord[2] - coord[0], coord[3] - coord[1],
@@ -117,8 +156,10 @@ def visualize_data():
             plt.scatter(typinglog_group['touchx'], typinglog_group['touchy'], color='yellow', marker='o', s=40,
                         label='Touch Points')
             plt.title(f'Gaze and Typing Trail for Sentence {sentence_id}')
-            plt.xlim(501.5, 1942.5)
-            plt.ylim(0, 2760)
+            # plt.xlim(501.5, 1942.5)
+            # plt.ylim(0, 2760)
+            plt.xlim(0, 1080)
+            plt.ylim(0, 1920)
             plt.gca().invert_yaxis()
             plt.xlabel('X Coordinate')
             plt.ylabel('Y Coordinate')

@@ -10,6 +10,7 @@ from sklearn.preprocessing import normalize
 from scipy.stats import pearsonr
 from sklearn.metrics.pairwise import cosine_similarity
 from How_we_type_code.error_rate_analysis import load_sentences_df, flag_input_stream
+from How_we_type_code.traj_visualization import reshaping_to_1080_1920
 from tools.string_functions import *
 from tools.parser import Parse
 import Levenshtein as lev
@@ -65,8 +66,10 @@ def load_data(gaze_file, typing_file):
     typinglog_df['trialtime'] = typinglog_df['trialtime'].astype(float).astype(int)
     typinglog_df['sentence_id'] = typinglog_df['sentence_id'].astype(int)
 
-    typinglog_df['touchx'] += 501.5 - typinglog_df['touchx'].min()
-    typinglog_df['touchy'] += 1840 - typinglog_df['touchy'].min()
+    # typinglog_df['touchx'] += 501.5 - typinglog_df['touchx'].min()
+    # typinglog_df['touchy'] += 1840 - typinglog_df['touchy'].min()
+    typinglog_df.loc[:, 'touchy'] += 1840 - typinglog_df['touchy'].min()
+    typinglog_df = reshaping_to_1080_1920(typinglog_df, 'touchx', 'touchy')
 
     return gaze_df, typinglog_df
 
@@ -88,8 +91,9 @@ def compute_distance_and_cosine_similarity(gaze_df, typinglog_df):
         gaze_group = filter_percentiles(gaze_group, 'x', lower_percentile=5, upper_percentile=95)
         gaze_group = filter_percentiles(gaze_group, 'y', lower_percentile=5, upper_percentile=95)
 
-        gaze_group = scale_to_range(gaze_group, 'x', x_min, x_max)
+        gaze_group = scale_to_range(gaze_group, 'x', x_min - 501.5, x_max - 501.5)
         gaze_group = scale_to_range(gaze_group, 'y', y_min, y_max)
+        gaze_group = reshaping_to_1080_1920(gaze_group, 'x', 'y')
         # try:
         #     gaze_group = normalize_coordinates(gaze_group, 'x', 'y')
         # except:
@@ -709,7 +713,8 @@ def process_all_error_rate_vs_proofreading():
     ax.set_xticklabels([f'{x:.2f}' for x in binned_corrected_error_rate_keys], rotation=45)
     # add count to each bar
     for i, bin in enumerate(binned_corrected_error_rate_keys):
-        ax.text(i, len(binned_corrected_error_rates_proofreading[bin]), len(binned_corrected_error_rates_proofreading[bin]),
+        ax.text(i, len(binned_corrected_error_rates_proofreading[bin]),
+                len(binned_corrected_error_rates_proofreading[bin]),
                 ha='center', va='bottom')
 
     plt.show()
@@ -725,13 +730,14 @@ def process_all_error_rate_vs_proofreading():
     ax.set_xticklabels([f'{x:.3f}' for x in binned_uncorrected_error_rate_keys], rotation=45)
     # add count to each bar
     for i, bin in enumerate(binned_uncorrected_error_rate_keys):
-        ax.text(i, len(binned_uncorrected_error_rates_proofreading[bin]), len(binned_uncorrected_error_rates_proofreading[bin]),
+        ax.text(i, len(binned_uncorrected_error_rates_proofreading[bin]),
+                len(binned_uncorrected_error_rates_proofreading[bin]),
                 ha='center', va='bottom')
     plt.show()
 
 
 if __name__ == '__main__':
-    # process_all_distance_and_similarity()
-    # process_all_key_vs_proofreading()
-    # process_all_iki_vs_proofreading()
+    process_all_distance_and_similarity()
+    process_all_key_vs_proofreading()
+    process_all_iki_vs_proofreading()
     process_all_error_rate_vs_proofreading()
