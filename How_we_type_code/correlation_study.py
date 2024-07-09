@@ -9,6 +9,10 @@ from config import how_we_type_key_coordinate, HOW_WE_TYPE_TYPING_LOG_DATA_DIR, 
 from sklearn.preprocessing import normalize
 from scipy.stats import pearsonr
 from sklearn.metrics.pairwise import cosine_similarity
+from How_we_type_code.error_rate_analysis import load_sentences_df, flag_input_stream
+from tools.string_functions import *
+from tools.parser import Parse
+import Levenshtein as lev
 
 # Provided configurations
 original_gaze_columns = ['subject_id', 'block', 'sentence_id', 'trialtime', 'x', 'y']
@@ -77,6 +81,8 @@ def compute_distance_and_cosine_similarity(gaze_df, typinglog_df):
     # typinglog_df = normalize_coordinates(typinglog_df, 'touchx', 'touchy')
     distances = {}
     similarities = {}
+    gaze_on_keyboard_ratio = 0
+    gaze_on_keyboard_ratio_list = []
     for sentence_id, group in typinglog_df.groupby('sentence_id'):
         gaze_group = gaze_df[gaze_df['sentence_id'] == sentence_id]
         gaze_group = filter_percentiles(gaze_group, 'x', lower_percentile=5, upper_percentile=95)
@@ -88,14 +94,19 @@ def compute_distance_and_cosine_similarity(gaze_df, typinglog_df):
         #     gaze_group = normalize_coordinates(gaze_group, 'x', 'y')
         # except:
         #     continue
+
         for _, typing_row in group.iterrows():
+            is_proofreading = []
             trialtime = typing_row['trialtime']
             window_gaze_df = gaze_group[(gaze_group['trialtime'] >= trialtime + tail_offset) &
                                         (gaze_group['trialtime'] <= trialtime + head_offset)]
-
+            if window_gaze_df.empty:
+                continue
             for _, gaze_row in window_gaze_df.iterrows():
                 if gaze_row['y'] < 0.6 * gaze_group['y'].max():
+                    is_proofreading.append(1)
                     continue
+                is_proofreading.append(0)
                 offset = gaze_row['trialtime'] - trialtime
                 dist = np.linalg.norm([gaze_row['x'] - typing_row['touchx'], gaze_row['y'] - typing_row['touchy']])
                 gaze_vec = np.array([gaze_row['x'], gaze_row['y']]).reshape(1, -1)
@@ -111,8 +122,11 @@ def compute_distance_and_cosine_similarity(gaze_df, typinglog_df):
                 if offset not in similarities:
                     similarities[offset] = []
                 similarities[offset].append(sim)
+            gaze_on_keyboard_ratio_list.append(1 - np.mean(is_proofreading))
+    if gaze_on_keyboard_ratio_list:
+        gaze_on_keyboard_ratio = np.mean(gaze_on_keyboard_ratio_list)
 
-    return distances, similarities
+    return distances, similarities, gaze_on_keyboard_ratio
 
 
 def compute_pearson_correlation_and_cosine_similarity(gaze_df, typinglog_df):
@@ -193,7 +207,7 @@ def plot_similarities(avg_similarities):
     plt.show()
 
 
-def plot_distances(avg_distances, save_dir=None):
+def plot_distances(avg_distances, save_dir=None, gaze_on_keyboard_ratio=0):
     if save_dir:
         avg_distances = {offset: np.nanmean(avg_distances[offset]) for offset in avg_distances}
     offsets = sorted(avg_distances.keys())
@@ -231,6 +245,9 @@ def plot_distances(avg_distances, save_dir=None):
     plt.ylabel('Average Normalized Distance')
     plt.ylim(0, max_ylim)
     plt.legend()
+    # add gaze on keyboard ratio at bottom right
+    plt.text(0.95, 0.05, f'Gaze on Keyboard Ratio: {gaze_on_keyboard_ratio}', horizontalalignment='right',
+             verticalalignment='bottom', transform=plt.gca().transAxes)
     if save_dir:
         plt.title('Average Normalized Distance between Gaze Position and Typed Position of log {}'.format(
             save_dir.split('/')[-1]))
@@ -245,9 +262,9 @@ def plot_distances(avg_distances, save_dir=None):
 
 def get_files():
     gaze_files = [osp.join(gaze_data_dir, f) for f in os.listdir(gaze_data_dir) if
-                  f.startswith('gaze') and f.endswith('.csv')]
+                  f.startswith('gaze') and f.endswith('1.csv')]
     typing_files = [osp.join(typing_log_dir, f.replace('gaze', 'typinglog')) for f in os.listdir(gaze_data_dir) if
-                    f.startswith('gaze') and f.endswith('.csv')]
+                    f.startswith('gaze') and f.endswith('1.csv')]
     return gaze_files, typing_files
 
 
@@ -259,6 +276,7 @@ def process_all_distance_and_similarity():
     all_correlations_x = []
     all_correlations_y = []
     all_cosine_similarities = []
+    all_gaze_on_keyboard_ratio = []
 
     for gaze_file, typing_file in zip(gaze_files, typing_files):
         if osp.exists(typing_file):
@@ -267,7 +285,8 @@ def process_all_distance_and_similarity():
             print("Processing files: ", csv_num)
             # print("Processing files: ", gaze_file, typing_file)
             gaze_df, typinglog_df = load_data(gaze_file, typing_file)
-            distances, similarities = compute_distance_and_cosine_similarity(gaze_df, typinglog_df)
+            distances, similarities, gaze_on_keyboard_ratio = compute_distance_and_cosine_similarity(gaze_df,
+                                                                                                     typinglog_df)
             corr_xy_touch, corr_x, corr_y, avg_cosine_similarity = compute_pearson_correlation_and_cosine_similarity(
                 gaze_df, typinglog_df)
 
@@ -280,6 +299,7 @@ def process_all_distance_and_similarity():
             all_correlations_x.append(corr_x)
             all_correlations_y.append(corr_y)
             all_cosine_similarities.append(avg_cosine_similarity)
+            all_gaze_on_keyboard_ratio.append(gaze_on_keyboard_ratio)
 
             for offset, dists in distances.items():
                 if offset not in all_distances:
@@ -291,12 +311,13 @@ def process_all_distance_and_similarity():
                     all_similarities[offset] = []
                 all_similarities[offset].extend(sims)
 
-            plot_distances(distances, save_dir=osp.join(FIG_DIR, csv_num))
+            plot_distances(distances, save_dir=osp.join(FIG_DIR, csv_num),
+                           gaze_on_keyboard_ratio=gaze_on_keyboard_ratio)
 
     final_avg_distances = {offset: np.nanmean(all_distances[offset]) for offset in all_distances}
-    final_avg_similarities = {offset: np.nanmean(all_similarities[offset]) for offset in all_similarities}
-    plot_distances(final_avg_distances)
-    plot_similarities(final_avg_similarities)
+    plot_distances(final_avg_distances, gaze_on_keyboard_ratio=np.nanmean(all_gaze_on_keyboard_ratio))
+    # final_avg_similarities = {offset: np.nanmean(all_similarities[offset]) for offset in all_similarities}
+    # plot_similarities(final_avg_similarities)
 
     # Compute overall correlations
     overall_correlation_xy_touch = np.nanmean(all_correlations_xy_touch)
@@ -335,11 +356,13 @@ def get_key_vs_proofreading(gaze_df, typinglog_df):
 
 def get_iki_vs_proofreading(gaze_df, typinglog_df):
     iki = {}
+    iki_mean_list = []
     for sentence_id, group in typinglog_df.groupby('sentence_id'):
         gaze_group = gaze_df[gaze_df['sentence_id'] == sentence_id]
         if gaze_group.empty:
             continue
-
+        inter_key_interval_mean = group['trialtime'].diff().mean()
+        iki_mean_list.append(inter_key_interval_mean)
         for i in range(1, len(group)):
             try:
                 typing_row_prev = group.iloc[i - 1]
@@ -365,7 +388,8 @@ def get_iki_vs_proofreading(gaze_df, typinglog_df):
                 iki[inter_key_interval].append(is_proofreading)
             except:
                 continue
-    return iki
+
+    return iki, iki_mean_list
 
 
 def process_all_key_vs_proofreading():
@@ -421,6 +445,8 @@ def process_all_key_vs_proofreading():
     plt.title('Proofreading Rate for Each Key')
     plt.xticks(rotation=45)
     plt.show()
+    # save the fig to figs/how_we_type
+    plt.savefig(osp.join(FIG_DIR, 'proofreading_rate_for_each_key.png'))
 
     # plot the proofreading rate of "_", "B" and other keys
     first_row_char = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 'å']
@@ -457,11 +483,13 @@ def process_all_key_vs_proofreading():
     plt.title('Proofreading Rate for space, backspace and other keys')
     plt.xticks(rotation=45)
     plt.show()
+    plt.savefig(osp.join(FIG_DIR, 'proofreading_rate_for_space_backspace_other_keys.png'))
 
 
 def process_all_iki_vs_proofreading():
     gaze_files, typing_files = get_files()
     all_ikis = {}
+    all_iki_means = []
     for gaze_file, typing_file in zip(gaze_files, typing_files):
         if osp.exists(typing_file):
             # gaze_129_1.csv, get 129_1
@@ -469,12 +497,12 @@ def process_all_iki_vs_proofreading():
             print("Processing files: ", csv_num)
             # print("Processing files: ", gaze_file, typing_file)
             gaze_df, typinglog_df = load_data(gaze_file, typing_file)
-            iki = get_iki_vs_proofreading(gaze_df, typinglog_df)
+            iki, iki_mean_list = get_iki_vs_proofreading(gaze_df, typinglog_df)
             for key, proofreading in iki.items():
                 if key not in all_ikis:
                     all_ikis[key] = []
                 all_ikis[key].extend(proofreading)
-
+            all_iki_means.extend(iki_mean_list)
     # Group IKIs into bins of 200
     bin_size = 100
     max_iki = 3000
@@ -507,6 +535,7 @@ def process_all_iki_vs_proofreading():
     ax.set_title('Average Proofreading Rate by IKI')
     ax.set_xticklabels(binned_iki_keys, rotation=45)
     plt.show()
+    plt.savefig(osp.join(FIG_DIR, 'average_proofreading_rate_by_iki.png'))
 
     # Plot the iki count bar chart, for the same size of bins
     iki_count = [len(binned_ikis[bin]) for bin in binned_iki_keys]
@@ -516,10 +545,193 @@ def process_all_iki_vs_proofreading():
     plt.ylabel('Count')
     plt.title('IKI Count by Bins')
     plt.xticks(rotation=45)
+    # add avg iki and std to bottom right
+    plt.text(0.95, 0.05, f'Average IKI: {np.mean(all_iki_means)}', horizontalalignment='right',
+             verticalalignment='bottom', transform=plt.gca().transAxes)
+    plt.text(0.95, 0.1, f'IKI std: {np.std(all_iki_means)}', horizontalalignment='right',
+             verticalalignment='bottom', transform=plt.gca().transAxes)
+    plt.show()
+    plt.savefig(osp.join(FIG_DIR, 'iki_count_by_bins.png'))
+
+
+def process_all_error_rate_vs_proofreading():
+    sentences_df = load_sentences_df()
+    gaze_files, typing_files = get_files()
+    corrected_error_rates_proofreading = {}
+    uncorrected_error_rates_proofreading = {}
+    parser = Parse()
+    for gaze_file, typing_file in zip(gaze_files, typing_files):
+        if osp.exists(typing_file):
+            # gaze_129_1.csv, get 129_1
+            csv_num = gaze_file.split('_')[-2] + '_' + gaze_file.split('_')[-1].split('.')[0]
+            print("Processing files: ", csv_num)
+            # print("Processing files: ", gaze_file, typing_file)
+            gaze_df, typinglog_df = load_data(gaze_file, typing_file)
+            typinglog_df['ITE_AUTO'] = 0
+            for sentence_id, group in typinglog_df.groupby('sentence_id'):
+                try:
+                    is_proofreading_list = []
+                    gaze_group = gaze_df[gaze_df['sentence_id'] == sentence_id]
+                    if gaze_group.empty:
+                        continue
+                    committed_sentence = group['INPUT'].iloc[-1]
+                    target_sentence = sentences_df[sentences_df['SENTENCE_ID'] == sentence_id]['SENTENCE'].iloc[0]
+
+                    reformatted_input, auto_corrected_if_count, auto_corrected_c_count, auto_corrected_word_count, \
+                    auto_correct_count, auto_correct_flag, immediate_error_correction_count, delayed_error_correction_count, \
+                    bsp_count = parser.reformat_input(group)
+                    flagged_IS = flag_input_stream(reformatted_input)
+                    _, MSD = min_string_distance(target_sentence, committed_sentence)
+
+                    alignments = []
+
+                    align(target_sentence, committed_sentence, MSD, len(target_sentence), len(committed_sentence),
+                          "", "",
+                          alignments)
+
+                    all_triplets = stream_align(flagged_IS, alignments)
+                    all_edited_triplets = assign_position_values(all_triplets)
+                    all_error_lists = error_detection(all_edited_triplets)
+                    lev_distance = lev.distance(target_sentence, committed_sentence)
+                    for error_list in all_error_lists:
+                        inf_count, if_count, correct_count, fix_count, slips_info = count_component(error_list,
+                                                                                                    verbose=False)
+                        if inf_count == lev_distance:
+                            break
+                    if lev_distance != inf_count:
+                        continue
+
+                    uncorrected_error_rate = inf_count / (inf_count + if_count + correct_count)
+                    corrected_error_rate = if_count / (inf_count + if_count + correct_count)
+                    for _, typing_row in group.iterrows():
+                        trialtime = typing_row['trialtime']
+                        closest_gaze_row = gaze_group.iloc[(gaze_group['trialtime'] - trialtime).abs().argmin()]
+                        if closest_gaze_row['y'] < 0.4 * gaze_group['y'].max():
+                            is_proofreading = 1
+                        else:
+                            is_proofreading = 0
+                        is_proofreading_list.append(is_proofreading)
+                    proofreading_ratio = np.mean(is_proofreading_list)
+                    if corrected_error_rate not in corrected_error_rates_proofreading:
+                        corrected_error_rates_proofreading[corrected_error_rate] = []
+                    corrected_error_rates_proofreading[corrected_error_rate].append(proofreading_ratio)
+                    if uncorrected_error_rate not in uncorrected_error_rates_proofreading:
+                        uncorrected_error_rates_proofreading[uncorrected_error_rate] = []
+                    uncorrected_error_rates_proofreading[uncorrected_error_rate].append(proofreading_ratio)
+                except:
+                    continue
+
+    # plot the corrected error rate vs proofreading rate
+    bin_size_corrected = 0.05
+    bin_size_uncorrected = 0.02
+    max_corrected_error_rate = 0.7
+    max_uncorrected_error_rate = 0.2
+    bins_corrected = np.arange(0, max_corrected_error_rate + bin_size_corrected, bin_size_corrected)
+    bins_uncorrected = np.arange(0, max_uncorrected_error_rate + bin_size_uncorrected, bin_size_uncorrected)
+    binned_corrected_error_rates_proofreading = {bin: [] for bin in bins_corrected}
+    binned_uncorrected_error_rates_proofreading = {bin: [] for bin in bins_uncorrected}
+
+    corrected_error_rates_proofreading = {k: v for k, v in corrected_error_rates_proofreading.items() if
+                                          k <= max_corrected_error_rate}
+    uncorrected_error_rates_proofreading = {k: v for k, v in uncorrected_error_rates_proofreading.items() if
+                                            k <= max_uncorrected_error_rate}
+
+    for corrected_error_rate, proofreading in corrected_error_rates_proofreading.items():
+        bin = (corrected_error_rate // bin_size_corrected) * bin_size_corrected
+        binned_corrected_error_rates_proofreading[bin].extend(proofreading)
+    for uncorrected_error_rate, proofreading in uncorrected_error_rates_proofreading.items():
+        bin = (uncorrected_error_rate // bin_size_uncorrected) * bin_size_uncorrected
+        binned_uncorrected_error_rates_proofreading[bin].extend(proofreading)
+
+    # Calculate the average proofreading rate for each bin
+    binned_corrected_error_rate_keys = sorted(binned_corrected_error_rates_proofreading.keys())
+    corrected_proofreading_rate = [
+        np.mean(binned_corrected_error_rates_proofreading[bin]) if binned_corrected_error_rates_proofreading[bin] else 0
+        for bin in binned_corrected_error_rate_keys]
+    corrected_proofreading_std = [
+        np.std(binned_corrected_error_rates_proofreading[bin]) if binned_corrected_error_rates_proofreading[bin] else 0
+        for bin in binned_corrected_error_rate_keys]
+    binned_uncorrected_error_rate_keys = sorted(binned_uncorrected_error_rates_proofreading.keys())
+    uncorrected_proofreading_rate = [
+        np.mean(binned_uncorrected_error_rates_proofreading[bin]) if binned_uncorrected_error_rates_proofreading[
+            bin] else 0 for bin in binned_uncorrected_error_rate_keys]
+    uncorrected_proofreading_std = [
+        np.std(binned_uncorrected_error_rates_proofreading[bin]) if binned_uncorrected_error_rates_proofreading[
+            bin] else 0 for bin in binned_uncorrected_error_rate_keys]
+
+    # Ensure error bars do not go below zero and do not exceed one
+    corrected_proofreading_rate = np.array(corrected_proofreading_rate)
+    corrected_proofreading_std = np.array(corrected_proofreading_std)
+    corrected_lower_error = np.clip(corrected_proofreading_rate - corrected_proofreading_std, 0, np.inf)
+    corrected_upper_error = np.clip(corrected_proofreading_rate + corrected_proofreading_std, -np.inf, 1)
+    corrected_asymmetric_error = [corrected_proofreading_rate - corrected_lower_error,
+                                  corrected_upper_error - corrected_proofreading_rate]
+
+    uncorrected_proofreading_rate = np.array(uncorrected_proofreading_rate)
+    uncorrected_proofreading_std = np.array(uncorrected_proofreading_std)
+    uncorrected_lower_error = np.clip(uncorrected_proofreading_rate - uncorrected_proofreading_std, 0, np.inf)
+    uncorrected_upper_error = np.clip(uncorrected_proofreading_rate + uncorrected_proofreading_std, -np.inf, 1)
+    uncorrected_asymmetric_error = [uncorrected_proofreading_rate - uncorrected_lower_error,
+                                    uncorrected_upper_error - uncorrected_proofreading_rate]
+
+    # Plot the bar chart with std for corrected error rate
+    plt.figure(figsize=(12, 8))
+    ax = sns.barplot(x=binned_corrected_error_rate_keys, y=corrected_proofreading_rate)
+    ax.errorbar(x=np.arange(len(binned_corrected_error_rate_keys)), y=corrected_proofreading_rate,
+                yerr=corrected_asymmetric_error, fmt='none', c='black', capsize=5)
+    # ax.set_xlim(0, 0.7)
+    ax.set_xlabel('Corrected Error Rate')
+    ax.set_ylabel('Proofreading Rate')
+    ax.set_title('Average Proofreading Rate by Corrected Error Rate')
+    ax.set_xticklabels([f'{x:.2f}' for x in binned_corrected_error_rate_keys], rotation=45)
+    plt.show()
+
+    # Plot the bar chart with std for uncorrected error rate
+    plt.figure(figsize=(12, 8))
+    ax = sns.barplot(x=binned_uncorrected_error_rate_keys, y=uncorrected_proofreading_rate)
+    # ax.set_xlim(0, 0.25)
+    ax.errorbar(x=np.arange(len(binned_uncorrected_error_rate_keys)), y=uncorrected_proofreading_rate,
+                yerr=uncorrected_asymmetric_error, fmt='none', c='black', capsize=5)
+    ax.set_xlabel('Uncorrected Error Rate')
+    ax.set_ylabel('Proofreading Rate')
+    ax.set_title('Average Proofreading Rate by Uncorrected Error Rate')
+    ax.set_xticklabels([f'{x:.3f}' for x in binned_uncorrected_error_rate_keys], rotation=45)
+    plt.show()
+
+    # plot the count of corrected error rate, also have the count for each bar
+    plt.figure(figsize=(12, 8))
+    ax = sns.barplot(x=binned_corrected_error_rate_keys,
+                     y=[len(binned_corrected_error_rates_proofreading[bin]) for bin in
+                        binned_corrected_error_rate_keys])
+    ax.set_xlabel('Corrected Error Rate')
+    ax.set_ylabel('Count')
+    ax.set_title('Count of Corrected Error Rate')
+    ax.set_xticklabels([f'{x:.2f}' for x in binned_corrected_error_rate_keys], rotation=45)
+    # add count to each bar
+    for i, bin in enumerate(binned_corrected_error_rate_keys):
+        ax.text(i, len(binned_corrected_error_rates_proofreading[bin]), len(binned_corrected_error_rates_proofreading[bin]),
+                ha='center', va='bottom')
+
+    plt.show()
+
+    # plot the count of uncorrected error rate
+    plt.figure(figsize=(12, 8))
+    ax = sns.barplot(x=binned_uncorrected_error_rate_keys,
+                     y=[len(binned_uncorrected_error_rates_proofreading[bin]) for bin in
+                        binned_uncorrected_error_rate_keys])
+    ax.set_xlabel('Uncorrected Error Rate')
+    ax.set_ylabel('Count')
+    ax.set_title('Count of Uncorrected Error Rate')
+    ax.set_xticklabels([f'{x:.3f}' for x in binned_uncorrected_error_rate_keys], rotation=45)
+    # add count to each bar
+    for i, bin in enumerate(binned_uncorrected_error_rate_keys):
+        ax.text(i, len(binned_uncorrected_error_rates_proofreading[bin]), len(binned_uncorrected_error_rates_proofreading[bin]),
+                ha='center', va='bottom')
     plt.show()
 
 
 if __name__ == '__main__':
-    process_all_distance_and_similarity()
-    process_all_key_vs_proofreading()
-    process_all_iki_vs_proofreading()
+    # process_all_distance_and_similarity()
+    # process_all_key_vs_proofreading()
+    # process_all_iki_vs_proofreading()
+    process_all_error_rate_vs_proofreading()

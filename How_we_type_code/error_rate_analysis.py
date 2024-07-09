@@ -76,7 +76,7 @@ if __name__ == '__main__':
             target_sentence = sentences_df[sentences_df['SENTENCE_ID'] == sentence_id]['SENTENCE'].iloc[0]
             reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
             auto_corrected_word_count, auto_correct_count, auto_correct_flag, \
-            immediate_error_correction_count, delayed_error_correction_count = parser.reformat_input(test_section_df)
+            immediate_error_correction_count, delayed_error_correction_count, bsp_count = parser.reformat_input(test_section_df)
             flagged_IS = flag_input_stream(reformatted_input)
             unique_transposition_sets = []
             _, MSD = min_string_distance(target_sentence, committed_sentence)
@@ -91,7 +91,7 @@ if __name__ == '__main__':
             all_error_lists = error_detection(all_edited_triplets)
             lev_distance = lev.distance(target_sentence, committed_sentence)
             for error_list in all_error_lists:
-                inf_count, if_count, correct_count, fix_count = count_component(error_list, verbose=False)
+                inf_count, if_count, correct_count, fix_count, slips_info = count_component(error_list, verbose=False)
                 if inf_count == lev_distance:
                     break
             Target = target_sentence
