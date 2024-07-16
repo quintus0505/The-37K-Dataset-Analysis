@@ -7,6 +7,8 @@ import os.path as osp
 import numpy as np
 import Levenshtein as lev
 from tools.string_functions import *
+from torchmetrics import CharErrorRate
+from tqdm import tqdm
 
 WMR_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'WORD_COUNT', 'MODIFIED_WORD_COUNT', 'IKI', 'WPM']
 AC_VISUALIZATION_COLUMNS = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'WORD_COUNT', 'AC_WORD_COUNT', 'IKI', 'AC']
@@ -64,6 +66,8 @@ class Parse(ABC):
 
         self.test_section_ids = None
 
+        self.cer = CharErrorRate()
+
     def save_iki_wmr_visualization(self, path):
         self.iki_wmr_visualization_df.to_csv(path, index=False, header=False)
 
@@ -79,7 +83,7 @@ class Parse(ABC):
     def save_iki_age_visualization(self, path):
         self.age_visualization_df.to_csv(path, index=False, header=False)
 
-    def load_participants(self, ite=None, keyboard='Gboard'):
+    def load_participants(self, ite=None, keyboard=None):
         self.participants_dataframe = clean_participants_data(ite=ite, keyboard=keyboard)
 
     def load_logdata(self, full_log_data):
@@ -193,6 +197,22 @@ class Parse(ABC):
 
         return test_section_df, committed_sentence
 
+    def get_finger_use(self, participant_id):
+        finger_use_value = self.participants_dataframe[
+            self.participants_dataframe['PARTICIPANT_ID'] == participant_id
+            ]['FINGERS'].values[0]
+
+        # Determine the finger use based on the extracted value
+        if 'both_hands' in finger_use_value:
+            finger_use = 'two_fingers'
+        elif 'right_hand' in finger_use_value or 'left_hand' in finger_use_value:
+            finger_use = 'one_finger'
+        elif 'thumbs' in finger_use_value:
+            finger_use = 'thumbs'
+        else:
+            finger_use = 'unknown'
+        return finger_use
+
     def get_age(self, full_log_data, ite=None, keyboard=None, custom_logdata_path=None):
         """
         get age vs iki based on the test section id
@@ -218,19 +238,7 @@ class Parse(ABC):
                     ]['PARTICIPANT_ID'].values[0]
 
                 # Extract the finger usage associated with the participant ID
-                finger_use_value = self.participants_dataframe[
-                    self.participants_dataframe['PARTICIPANT_ID'] == participant_id
-                    ]['FINGERS'].values[0]
-
-                # Determine the finger use based on the extracted value
-                if 'both_hands' in finger_use_value:
-                    finger_use = 'two_fingers'
-                elif 'right_hand' in finger_use_value or 'left_hand' in finger_use_value:
-                    finger_use = 'one_finger'
-                elif 'thumbs' in finger_use_value:
-                    finger_use = 'thumbs'
-                else:
-                    finger_use = 'unknown'  # Handle any other cases that might not be specified
+                finger_use = self.get_finger_use(participant_id)
 
                 iki, wpm = self.compute_iki_wpm(test_section_df)
                 participant_id = self.test_sections_dataframe[
@@ -581,6 +589,71 @@ class Parse(ABC):
         return reformatted_input, reformat_if_count, reformat_c_count, auto_corrected_word_count, \
                reformat_f_count, auto_correct_flag, immediate_error_correction_count, delayed_error_correction_count, bsp_count
 
+    def get_one_test_section_error_rate_correction(self, test_section_id):
+        test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
+        participant_id = self.test_sections_dataframe[
+            self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['PARTICIPANT_ID'].values[0]
+
+        finger_use = self.get_finger_use(participant_id)
+
+        sentence_id = self.test_sections_dataframe[
+            self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['SENTENCE_ID'].values[0]
+        target_sentence = self.sentences_dataframe[self.sentences_dataframe['SENTENCE_ID'] == sentence_id][
+            'SENTENCE'].values[0]
+
+        reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
+        auto_corrected_word_count, auto_correct_count, auto_correct_flag, \
+        immediate_error_correction_count, delayed_error_correction_count, bsp_count = self.reformat_input(
+            test_section_df)
+
+        target_sentence += 'eof'
+        committed_sentence += 'eof'
+        reformatted_input += 'eof'
+        flagged_IS = flag_input_stream(reformatted_input)
+
+        _, MSD = min_string_distance(target_sentence, committed_sentence)
+
+        alignments = []
+
+        align(target_sentence, committed_sentence, MSD, len(target_sentence), len(committed_sentence), "", "",
+              alignments)
+        unique_transposition_sets = []
+        all_triplets = stream_align(flagged_IS, alignments)
+        all_edited_triplets = assign_position_values(all_triplets)
+        all_error_lists = error_detection(all_edited_triplets)
+        best_set, occurrences = optimal_error_set(all_error_lists, unique_transposition_sets)
+        lev_distance = lev.distance(target_sentence, committed_sentence)
+        slips_info = {'uncorrected': {'INS': 0, 'OMI': 0, 'SUB': 0, 'CAP': 0, 'TRA': 0},
+                      'corrected': {'INS': 0, 'OMI': 0, 'SUB': 0, 'CAP': 0, 'TRA': 0}}
+        for error_list in all_error_lists:
+            # remove the "eof"
+            error_list = error_list[:-3]
+            inf_count, if_count, correct_count, fix_count, slips_info = count_component(error_list,
+                                                                                        verbose=False)
+            if inf_count == lev_distance:
+                break
+        # correct_count, inf_count, if_count, fix_count = track_typing_errors(target_sentence,
+        #                                                                     reformatted_input)
+        correct_count += auto_corrected_c_count - auto_corrected_word_count
+        if_count += auto_corrected_if_count
+        fix_count += auto_correct_count
+        self.total_char_count += if_count + correct_count + inf_count
+
+        for key in self.total_slips_info['uncorrected']:
+            self.total_slips_info['uncorrected'][key] += slips_info['uncorrected'][key]
+        for key in self.total_slips_info['corrected']:
+            self.total_slips_info['corrected'][key] += slips_info['corrected'][key]
+        self.test_section_count += 1
+
+        # uncorrected_error_rate = inf_count / (correct_count + inf_count + if_count)
+        uncorrected_error_rate = inf_count / len(committed_sentence)
+        corrected_error_rate = if_count / (correct_count + inf_count + if_count)
+        immediate_error_correction_rate = immediate_error_correction_count / len(committed_sentence)
+        delayed_error_correction_rate = delayed_error_correction_count / len(committed_sentence)
+
+        return uncorrected_error_rate, corrected_error_rate, immediate_error_correction_rate, \
+               delayed_error_correction_rate, bsp_count, finger_use, auto_correct_flag, test_section_df
+
     def compute_error_rate_correction(self, full_log_data, ite=None, keyboard=None, custom_logdata_path=None):
         """
         Compute the error rate between the committed sentence and the input sentence
@@ -605,84 +678,15 @@ class Parse(ABC):
             # if test_section_id == 28760:  # for debugging use
             #     print("test_section_id: ", test_section_id)
             try:
-                test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
-                participant_id = self.test_sections_dataframe[
-                    self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['PARTICIPANT_ID'].values[0]
-
-                finger_use_value = self.participants_dataframe[
-                    self.participants_dataframe['PARTICIPANT_ID'] == participant_id
-                    ]['FINGERS'].values[0]
-
-                # Determine the finger use based on the extracted value
-                if 'both_hands' in finger_use_value:
-                    finger_use = 'two_fingers'
-                elif 'right_hand' in finger_use_value or 'left_hand' in finger_use_value:
-                    finger_use = 'one_finger'
-                elif 'thumbs' in finger_use_value:
-                    finger_use = 'thumbs'
-                else:
-                    finger_use = 'unknown'
-
-                sentence_id = self.test_sections_dataframe[
-                    self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['SENTENCE_ID'].values[0]
-                target_sentence = self.sentences_dataframe[self.sentences_dataframe['SENTENCE_ID'] == sentence_id][
-                    'SENTENCE'].values[0]
-
-                reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
-                auto_corrected_word_count, auto_correct_count, auto_correct_flag, \
-                immediate_error_correction_count, delayed_error_correction_count, bsp_count = self.reformat_input(
-                    test_section_df)
+                uncorrected_error_rate, corrected_error_rate, immediate_error_correction_rate, \
+                delayed_error_correction_rate, bsp_count, finger_use, \
+                auto_correct_flag, test_section_df = self.get_one_test_section_error_rate_correction(test_section_id)
 
                 if auto_correct_flag:
                     auto_corrected_test_section_count += 1
                     if ite is None:
                         detected_autocorrected_test_section_ids.append(test_section_id)
                     continue
-
-                target_sentence += 'eof'
-                committed_sentence += 'eof'
-                reformatted_input += 'eof'
-                flagged_IS = flag_input_stream(reformatted_input)
-
-                _, MSD = min_string_distance(target_sentence, committed_sentence)
-
-                alignments = []
-
-                align(target_sentence, committed_sentence, MSD, len(target_sentence), len(committed_sentence), "", "",
-                      alignments)
-                unique_transposition_sets = []
-                all_triplets = stream_align(flagged_IS, alignments)
-                all_edited_triplets = assign_position_values(all_triplets)
-                all_error_lists = error_detection(all_edited_triplets)
-                best_set, occurrences = optimal_error_set(all_error_lists, unique_transposition_sets)
-                lev_distance = lev.distance(target_sentence, committed_sentence)
-                slips_info = {'uncorrected': {'INS': 0, 'OMI': 0, 'SUB': 0, 'CAP': 0, 'TRA': 0},
-                              'corrected': {'INS': 0, 'OMI': 0, 'SUB': 0, 'CAP': 0, 'TRA': 0}}
-                for error_list in all_error_lists:
-                    # remove the "eof"
-                    error_list = error_list[:-3]
-                    inf_count, if_count, correct_count, fix_count, slips_info = count_component(error_list,
-                                                                                                verbose=False)
-                    if inf_count == lev_distance:
-                        break
-                # correct_count, inf_count, if_count, fix_count = track_typing_errors(target_sentence,
-                #                                                                     reformatted_input)
-                correct_count += auto_corrected_c_count - auto_corrected_word_count
-                if_count += auto_corrected_if_count
-                fix_count += auto_correct_count
-                self.total_char_count += if_count + correct_count + inf_count
-
-                for key in self.total_slips_info['uncorrected']:
-                    self.total_slips_info['uncorrected'][key] += slips_info['uncorrected'][key]
-                for key in self.total_slips_info['corrected']:
-                    self.total_slips_info['corrected'][key] += slips_info['corrected'][key]
-                self.test_section_count += 1
-
-                # uncorrected_error_rate = inf_count / (correct_count + inf_count + if_count)
-                uncorrected_error_rate = inf_count / len(committed_sentence)
-                corrected_error_rate = if_count / (correct_count + inf_count + if_count)
-                immediate_error_correction_rate = immediate_error_correction_count / len(committed_sentence)
-                delayed_error_correction_rate = delayed_error_correction_count / len(committed_sentence)
 
                 self.corrected_error_rates.append(corrected_error_rate)
                 self.uncorrected_error_rates.append(uncorrected_error_rate)
@@ -765,15 +769,7 @@ class Parse(ABC):
                     print("Total char count: ", self.total_char_count)
 
             except:
-                try:  # for debugging use
-                    auto_corrected_word_count, auto_correct_count, auto_correct_flag, bsp_count = self.reformat_input(
-                        test_section_df)
-                except:
-                    try:  # for debugging use
-                        auto_corrected_word_count, auto_correct_count, auto_correct_flag, bsp_count = self.reformat_input(
-                            test_section_df)
-                    except:
-                        pass
+                pass
                 # add current test section to abandoned_test_section_df
                 abandoned_test_section_df = abandoned_test_section_df.append(test_section_df)
         print("*" * 50)
@@ -1196,6 +1192,98 @@ class Parse(ABC):
         print("Mean WMR: ", rebuild_df['WMR'].mean())
         print("Number of sentences with no modification: ", rebuild_df[rebuild_df['WMR'] == 0].shape[0])
 
+    def get_detected_auto_corrected_and_abandoned_test_section_ids(self):
+        returned_test_section_ids = []
+        abandoned_test_sections_df = pd.read_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'abandoned_test_sections.csv'))
+        detected_autocorrected_test_sections_df = pd.read_csv(
+            osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'detected_autocorrected_test_sections.csv'))
+        abandoned_test_sections_ids = abandoned_test_sections_df['TEST_SECTION_ID'].unique()
+        detected_autocorrected_test_sections_ids = detected_autocorrected_test_sections_df['TEST_SECTION_ID'].unique()
+        returned_test_section_ids.extend(abandoned_test_sections_ids)
+        returned_test_section_ids.extend(detected_autocorrected_test_sections_ids)
+        return returned_test_section_ids
+
+    def build_test_section_for_amortized_inference(self):
+        """
+        Build the test section for amortized inference
+        :return:
+        """
+        df_columns = ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'SENTENCE_ID', 'COMMITTED_SENTENCE', 'AGE', 'FINGER_USE',
+                      'LANGUAGE', 'GENDER', 'char_error_rate', 'IKI', 'WPM', 'num_backspaces', 'WMR',
+                      'edit_before_commit']
+        self.load_test_sections()
+        self.load_participants(ite=None, keyboard=None)
+        self.load_sentences()
+        no_ite_logdata_path = osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'no_ite_logdata.csv')
+        wmr_file_name = "wmr_no_ite_logdata_visualization.csv"
+        modification_file_name = "modification_no_ite_logdata_visualization.csv"
+        wmr_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, wmr_file_name),
+                             names=WMR_VISUALIZATION_COLUMNS,
+                             encoding='ISO-8859-1')
+        modification_df = pd.read_csv(osp.join(DEFAULT_VISUALIZATION_DIR, modification_file_name),
+                                      names=MODIFICATION_VISUALIZATION_COLUMNS,
+                                      encoding='ISO-8859-1')
+        self.load_data(ite=None, keyboard=None, full_log_data=True, custom_logdata_path=no_ite_logdata_path)
+
+        amortized_inference_df = pd.DataFrame(columns=df_columns)
+        test_section_ids = wmr_df['TEST_SECTION_ID'].unique()
+        removed_test_section_ids = self.get_detected_auto_corrected_and_abandoned_test_section_ids()
+        test_section_ids = [test_section_id for test_section_id in test_section_ids if test_section_id not in
+                            removed_test_section_ids]
+        print("processing {} test sections".format(len(test_section_ids)))
+        for test_section_id in tqdm(test_section_ids, desc="Processing test sections"):
+            try:
+                participant_id = self.test_sections_dataframe[
+                    self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['PARTICIPANT_ID'].values[0]
+                sentence_id = self.test_sections_dataframe[
+                    self.test_sections_dataframe['TEST_SECTION_ID'] == test_section_id]['SENTENCE_ID'].values[0]
+                sentence = self.sentences_dataframe[
+                    self.sentences_dataframe['SENTENCE_ID'] == sentence_id]['SENTENCE'].values[0]
+                test_section_df, committed_sentence = self.get_test_section_df(test_section_id)
+                if committed_sentence != committed_sentence:
+                    continue
+                age = self.participants_dataframe[self.participants_dataframe['PARTICIPANT_ID'] ==
+                                                  self.test_sections_dataframe[
+                                                      self.test_sections_dataframe[
+                                                          'TEST_SECTION_ID'] == test_section_id][
+                                                      'PARTICIPANT_ID'].values[0]]['AGE'].values[0]
+                finger_use = self.get_finger_use(participant_id)
+                language = self.participants_dataframe[self.participants_dataframe['PARTICIPANT_ID'] ==
+                                                       self.test_sections_dataframe[
+                                                           self.test_sections_dataframe[
+                                                               'TEST_SECTION_ID'] == test_section_id][
+                                                           'PARTICIPANT_ID'].values[0]]['NATIVE_LANGUAGE'].values[0]
+                gender = self.participants_dataframe[self.participants_dataframe['PARTICIPANT_ID'] ==
+                                                     self.test_sections_dataframe[
+                                                         self.test_sections_dataframe[
+                                                             'TEST_SECTION_ID'] == test_section_id][
+                                                         'PARTICIPANT_ID'].values[0]]['GENDER'].values[0]
+                char_error_rate = self.cer(committed_sentence, sentence).item()
+                iki = wmr_df[wmr_df['TEST_SECTION_ID'] == test_section_id]['IKI'].values[0]
+                wpm = wmr_df[wmr_df['TEST_SECTION_ID'] == test_section_id]['WPM'].values[0]
+                wmr = wmr_df[wmr_df['TEST_SECTION_ID'] == test_section_id]['MODIFIED_WORD_COUNT'].values[0] / \
+                      wmr_df[wmr_df['TEST_SECTION_ID'] == test_section_id]['WORD_COUNT'].values[0]
+                reformatted_input, auto_corrected_if_count, auto_corrected_c_count, \
+                auto_corrected_word_count, auto_correct_count, auto_correct_flag, \
+                immediate_error_correction_count, delayed_error_correction_count, num_backspaces = self.reformat_input(
+                    test_section_df)
+                edit_before_commit = modification_df[modification_df['TEST_SECTION_ID'] == test_section_id][
+                    'MODIFICATION_COUNT'].values[0]
+                # ['PARTICIPANT_ID', 'TEST_SECTION_ID', 'SENTENCE_ID', 'COMMITTED_SENTENCE', 'AGE', 'FINGER_USE',
+                #  'LANGUAGE', 'GENDER', 'char_error_rate', 'IKI', 'WPM', 'num_backspaces', 'WMR',
+                #  'edit_before_commit']
+                amortized_inference_df = amortized_inference_df.append(
+                    pd.DataFrame([[participant_id, test_section_id, sentence_id, committed_sentence, age, finger_use,
+                                   language, gender, char_error_rate, iki, wpm, num_backspaces, wmr,
+                                   edit_before_commit]],
+                                 columns=df_columns))
+
+            except:
+                print("Error in test section id: ", test_section_id)
+                continue
+        amortized_inference_df.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, 'amortized_inference_test_sections.csv'),
+                                      index=False, header=True)
+
 
 def compare_sentences(sentence1, sentence2):
     # Split the sentences into words
@@ -1224,8 +1312,9 @@ def compare_sentences(sentence1, sentence2):
 
 
 if __name__ == "__main__":
-    pass
-    # parser = Parse()
+    # pass
+    parser = Parse()
+    parser.build_test_section_for_amortized_inference()
     # reference = "the quick brown fox"
     # typed = "th quix<ck brpown"
     # typed_2 = 'thhe<<e quic<<ckk<<< browwn<<<n foxx<<x'
