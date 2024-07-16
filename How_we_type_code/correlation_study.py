@@ -25,8 +25,8 @@ original_log_columns = ['systime', 'subject_id', 'block', 'sentence_id', 'trialt
 gaze_data_dir = osp.join(HOW_WE_TYPE_GAZE_DATA_DIR, 'Gaze')
 typing_log_dir = osp.join(HOW_WE_TYPE_TYPING_LOG_DATA_DIR, 'Typing_log')
 
-tail_offset = -300
-head_offset = 300
+tail_offset = -1000
+head_offset = 1000
 
 FIG_DIR = osp.join(DEFAULT_FIGS_DIR, 'how_we_type')
 
@@ -261,6 +261,7 @@ def plot_distances(avg_distances, save_dir=None, gaze_on_keyboard_ratio=0):
         plt.savefig(osp.join(save_dir, 'average_normalized_distance.png'))
         plt.close()  # Close the plot to avoid displaying
     else:
+        plt.savefig(osp.join(FIG_DIR, 'average_normalized_distance.png'))
         plt.show()
 
 
@@ -427,6 +428,7 @@ def process_all_key_vs_proofreading():
     plt.ylabel('Count')
     plt.title('Count of Each Key')
     plt.xticks(rotation=45)
+    plt.savefig(osp.join(FIG_DIR, 'count_of_each_key.png'))
     plt.show()
 
     # plot proofreading rate with std
@@ -448,9 +450,9 @@ def process_all_key_vs_proofreading():
     plt.ylabel('Proofreading Rate')
     plt.title('Proofreading Rate for Each Key')
     plt.xticks(rotation=45)
-    plt.show()
     # save the fig to figs/how_we_type
     plt.savefig(osp.join(FIG_DIR, 'proofreading_rate_for_each_key.png'))
+    plt.show()
 
     # plot the proofreading rate of "_", "B" and other keys
     first_row_char = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 'å']
@@ -486,8 +488,8 @@ def process_all_key_vs_proofreading():
     plt.ylabel('Proofreading Rate')
     plt.title('Proofreading Rate for space, backspace and other keys')
     plt.xticks(rotation=45)
-    plt.show()
     plt.savefig(osp.join(FIG_DIR, 'proofreading_rate_for_space_backspace_other_keys.png'))
+    plt.show()
 
 
 def process_all_iki_vs_proofreading():
@@ -538,8 +540,8 @@ def process_all_iki_vs_proofreading():
     ax.set_ylabel('Proofreading Rate')
     ax.set_title('Average Proofreading Rate by IKI')
     ax.set_xticklabels(binned_iki_keys, rotation=45)
-    plt.show()
     plt.savefig(osp.join(FIG_DIR, 'average_proofreading_rate_by_iki.png'))
+    plt.show()
 
     # Plot the iki count bar chart, for the same size of bins
     iki_count = [len(binned_ikis[bin]) for bin in binned_iki_keys]
@@ -554,8 +556,8 @@ def process_all_iki_vs_proofreading():
              verticalalignment='bottom', transform=plt.gca().transAxes)
     plt.text(0.95, 0.1, f'IKI std: {np.std(all_iki_means)}', horizontalalignment='right',
              verticalalignment='bottom', transform=plt.gca().transAxes)
-    plt.show()
     plt.savefig(osp.join(FIG_DIR, 'iki_count_by_bins.png'))
+    plt.show()
 
 
 def process_all_error_rate_vs_proofreading():
@@ -564,14 +566,18 @@ def process_all_error_rate_vs_proofreading():
     corrected_error_rates_proofreading = {}
     uncorrected_error_rates_proofreading = {}
     parser = Parse()
+    # build a csv that save the error rates, proofreading rate, iki of each typing log
+    metrics_df = pd.DataFrame(
+        columns=['csv_num', 'corrected_error_rate', 'uncorrected_error_rate', 'proofreading_rate', 'iki'])
     for gaze_file, typing_file in zip(gaze_files, typing_files):
         if osp.exists(typing_file):
-            # gaze_129_1.csv, get 129_1
             csv_num = gaze_file.split('_')[-2] + '_' + gaze_file.split('_')[-1].split('.')[0]
             print("Processing files: ", csv_num)
-            # print("Processing files: ", gaze_file, typing_file)
             gaze_df, typinglog_df = load_data(gaze_file, typing_file)
             typinglog_df['ITE_AUTO'] = 0
+            corrected_error_rate_list = []
+            uncorrected_error_rate_list = []
+            proofreading_ratio_list = []
             for sentence_id, group in typinglog_df.groupby('sentence_id'):
                 try:
                     is_proofreading_list = []
@@ -622,8 +628,16 @@ def process_all_error_rate_vs_proofreading():
                     if uncorrected_error_rate not in uncorrected_error_rates_proofreading:
                         uncorrected_error_rates_proofreading[uncorrected_error_rate] = []
                     uncorrected_error_rates_proofreading[uncorrected_error_rate].append(proofreading_ratio)
+                    corrected_error_rate_list.append(corrected_error_rate)
+                    proofreading_ratio_list.append(proofreading_ratio)
                 except:
                     continue
+            iki, iki_mean_list = get_iki_vs_proofreading(gaze_df, typinglog_df)
+            mean_iki = np.mean(iki_mean_list)
+            metrics_df = metrics_df.append(
+                {'csv_num': csv_num, 'corrected_error_rate': np.mean(corrected_error_rate_list),
+                 'uncorrected_error_rate': np.mean(uncorrected_error_rate_list), 'proofreading_rate': np.mean(
+                    proofreading_ratio_list), 'iki': mean_iki}, ignore_index=True)
 
     # plot the corrected error rate vs proofreading rate
     bin_size_corrected = 0.05
@@ -678,28 +692,45 @@ def process_all_error_rate_vs_proofreading():
     uncorrected_asymmetric_error = [uncorrected_proofreading_rate - uncorrected_lower_error,
                                     uncorrected_upper_error - uncorrected_proofreading_rate]
 
+    # Compute correlations
+    corrected_flat_rates = [rate for rates in corrected_error_rates_proofreading.values() for rate in rates]
+    corrected_flat_proofreading = [proof for proof in corrected_error_rates_proofreading.keys() for _ in
+                                   corrected_error_rates_proofreading[proof]]
+    corrected_corr, _ = pearsonr(corrected_flat_proofreading, corrected_flat_rates)
+
+    uncorrected_flat_rates = [rate for rates in uncorrected_error_rates_proofreading.values() for rate in rates]
+    uncorrected_flat_proofreading = [proof for proof in uncorrected_error_rates_proofreading.keys() for _ in
+                                     uncorrected_error_rates_proofreading[proof]]
+    uncorrected_corr, _ = pearsonr(uncorrected_flat_proofreading, uncorrected_flat_rates)
+
     # Plot the bar chart with std for corrected error rate
     plt.figure(figsize=(12, 8))
     ax = sns.barplot(x=binned_corrected_error_rate_keys, y=corrected_proofreading_rate)
     ax.errorbar(x=np.arange(len(binned_corrected_error_rate_keys)), y=corrected_proofreading_rate,
                 yerr=corrected_asymmetric_error, fmt='none', c='black', capsize=5)
-    # ax.set_xlim(0, 0.7)
     ax.set_xlabel('Corrected Error Rate')
     ax.set_ylabel('Proofreading Rate')
     ax.set_title('Average Proofreading Rate by Corrected Error Rate')
     ax.set_xticklabels([f'{x:.2f}' for x in binned_corrected_error_rate_keys], rotation=45)
+    # Display correlation on the plot
+    ax.text(0.95, 0.95, f'Corr: {corrected_corr:.3f}', horizontalalignment='right', verticalalignment='top',
+            transform=ax.transAxes)
+    plt.savefig(osp.join(FIG_DIR, 'average_proofreading_rate_by_corrected_error_rate.png'))
     plt.show()
 
     # Plot the bar chart with std for uncorrected error rate
     plt.figure(figsize=(12, 8))
     ax = sns.barplot(x=binned_uncorrected_error_rate_keys, y=uncorrected_proofreading_rate)
-    # ax.set_xlim(0, 0.25)
     ax.errorbar(x=np.arange(len(binned_uncorrected_error_rate_keys)), y=uncorrected_proofreading_rate,
                 yerr=uncorrected_asymmetric_error, fmt='none', c='black', capsize=5)
     ax.set_xlabel('Uncorrected Error Rate')
     ax.set_ylabel('Proofreading Rate')
     ax.set_title('Average Proofreading Rate by Uncorrected Error Rate')
     ax.set_xticklabels([f'{x:.3f}' for x in binned_uncorrected_error_rate_keys], rotation=45)
+    # Display correlation on the plot
+    ax.text(0.95, 0.95, f'Corr: {uncorrected_corr:.3f}', horizontalalignment='right', verticalalignment='top',
+            transform=ax.transAxes)
+    plt.savefig(osp.join(FIG_DIR, 'average_proofreading_rate_by_uncorrected_error_rate.png'))
     plt.show()
 
     # plot the count of corrected error rate, also have the count for each bar
@@ -716,7 +747,7 @@ def process_all_error_rate_vs_proofreading():
         ax.text(i, len(binned_corrected_error_rates_proofreading[bin]),
                 len(binned_corrected_error_rates_proofreading[bin]),
                 ha='center', va='bottom')
-
+    plt.savefig(osp.join(FIG_DIR, 'count_of_corrected_error_rate.png'))
     plt.show()
 
     # plot the count of uncorrected error rate
@@ -733,11 +764,17 @@ def process_all_error_rate_vs_proofreading():
         ax.text(i, len(binned_uncorrected_error_rates_proofreading[bin]),
                 len(binned_uncorrected_error_rates_proofreading[bin]),
                 ha='center', va='bottom')
+    plt.savefig(osp.join(FIG_DIR, 'count_of_uncorrected_error_rate.png'))
     plt.show()
+
+    # sort the metrics_df by csv_num
+    metrics_df = metrics_df.sort_values(by='csv_num')
+    # save the metrics_df to csv
+    metrics_df.to_csv(osp.join(FIG_DIR, 'metrics.csv'), index=False)
 
 
 if __name__ == '__main__':
-    process_all_distance_and_similarity()
-    process_all_key_vs_proofreading()
-    process_all_iki_vs_proofreading()
+    # process_all_distance_and_similarity()
+    # process_all_key_vs_proofreading()
+    # process_all_iki_vs_proofreading()
     process_all_error_rate_vs_proofreading()
