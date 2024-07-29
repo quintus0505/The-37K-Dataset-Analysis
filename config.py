@@ -48,9 +48,6 @@ key_width = 131
 half_key_height = 115
 half_key_width = 65.5
 
-how_we_type_filtered_trails = {
-
-}
 
 # x y presented above is the center of the key
 how_we_type_key_coordinate = {'q': [501.5, 1840, 632.5, 2070],
@@ -84,4 +81,6 @@ how_we_type_key_coordinate = {'q': [501.5, 1840, 632.5, 2070],
                               'm': [1549.5, 2300, 1680.5, 2530],
                               '<': [1680.5, 2300, 1942.5, 2530],
                               ' ': [1193 - 5 * half_key_width, 2530, 1193 + 5 * half_key_width, 2760],
+                              'shift': [501.5, 2300, 763.5, 2530],
+                              'symbol': [501.5, 2530, 1193 - 5 * half_key_width, 2760],
                               'enter': [1193 + 5 * half_key_width, 2530, 1942.5, 2760]}

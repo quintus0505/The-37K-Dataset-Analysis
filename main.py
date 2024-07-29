@@ -17,6 +17,7 @@ parser.add_argument("--predict", action="store_true", default=False, help='if co
 parser.add_argument("--swipe", action="store_true", default=False, help='if considering swipe')
 parser.add_argument("--keyboard", type=str, default=None, help='keyboard type')
 parser.add_argument("--os", type=str, default=None, help='os type')
+# parser.add_argument("--finger", type=str, choices=['one', 'two'], default=None, help='finger num')
 
 # for both visualization and analysis
 parser.add_argument("--analyze", action="store_true", default=False, help="anylyze the data")
@@ -50,12 +51,17 @@ parser.add_argument('--error-rate', action="store_true", default=False,
 args = parser.parse_args()
 
 
-def split_by_finger_num(df):
+def split_by_finger_num(df, participants_dataframe=None, test_sections_dataframe=None):
     # Function to clean participants data should be defined elsewhere
-    participants_dataframe = clean_participants_data()
+    if participants_dataframe is None:
+        participants_dataframe = clean_participants_data()
 
-    one_finger_df = pd.DataFrame(columns=df.columns)
-    two_fingers_df = pd.DataFrame(columns=df.columns)
+    if test_sections_dataframe is None:
+        test_sections_dataframe = get_test_section_df()
+
+    # Initialize empty lists to collect data frames
+    one_finger_list = []
+    two_fingers_list = []
 
     unique_test_sections = df['TEST_SECTION_ID'].unique()
     total_unique_test_sections = len(unique_test_sections)
@@ -63,12 +69,25 @@ def split_by_finger_num(df):
 
     for test_section_id in tqdm(unique_test_sections, desc="Processing test sections"):
         test_section_df = df[df['TEST_SECTION_ID'] == test_section_id]
-        participant_id = test_section_df['PARTICIPANT_ID'].values[0]
+        # get the participant ID from the test_sections_dataframe
+        participant_data = test_sections_dataframe[
+            test_sections_dataframe['TEST_SECTION_ID'] == test_section_id
+            ]
+
+        if participant_data.empty:
+            continue
+
+        participant_id = participant_data['PARTICIPANT_ID'].values[0]
 
         # Extract the finger usage associated with the participant ID
-        finger_use_value = participants_dataframe[
+        finger_data = participants_dataframe[
             participants_dataframe['PARTICIPANT_ID'] == participant_id
-            ]['FINGERS'].values[0]
+            ]
+
+        if finger_data.empty:
+            continue
+
+        finger_use_value = finger_data['FINGERS'].values[0]
 
         # Determine the finger use based on the extracted value
         if 'both_hands' in finger_use_value:
@@ -81,9 +100,15 @@ def split_by_finger_num(df):
             finger_use = 'unknown'
 
         if finger_use == 'one_finger':
-            one_finger_df = one_finger_df.append(test_section_df, ignore_index=True)
+            one_finger_list.append(test_section_df)
         elif finger_use == 'two_fingers':
-            two_fingers_df = two_fingers_df.append(test_section_df, ignore_index=True)
+            two_fingers_list.append(test_section_df)
+
+    # Concatenate the collected data frames into single data frames
+    one_finger_df = pd.concat(one_finger_list, ignore_index=True) if one_finger_list else pd.DataFrame(
+        columns=df.columns)
+    two_fingers_df = pd.concat(two_fingers_list, ignore_index=True) if two_fingers_list else pd.DataFrame(
+        columns=df.columns)
 
     return one_finger_df, two_fingers_df
 
@@ -130,8 +155,24 @@ if __name__ == "__main__":
         name_info, ite_list, kbd, os = get_name_str()
         file_name = name_info + 'logdata.csv'
         print("Generating logdata file: ", file_name)
-        build_custom_logdata(ite=ite_list, keyboard=kbd, file_name=file_name, os=os)
-        get_sheet_info(sheet_name=file_name)
+        logdata_dataframe, participants_dataframe, test_sections_dataframe = build_custom_logdata(ite=ite_list,
+                                                                                                  keyboard=kbd,
+                                                                                                  file_name=file_name,
+                                                                                                  os=os,
+                                                                                                  # data_path=osp.join(
+                                                                                                  #     DEFAULT_CLEANED_DATASETS_DIR,
+                                                                                                  #     file_name)
+                                                                                                  )
+        # get_sheet_info(sheet_name=file_name, test_sections_dataframe=test_sections_dataframe)
+
+        print("Logdata file generated successfully")
+        print("splitting logdata file with finger number")
+        one_finger_df, two_fingers_df = split_by_finger_num(logdata_dataframe, participants_dataframe,
+                                                            test_sections_dataframe)
+        one_finger_file_name = 'one_finger_' + file_name
+        two_fingers_file_name = 'two_fingers_' + file_name
+        one_finger_df.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, one_finger_file_name), index=False, header=True)
+        two_fingers_df.to_csv(osp.join(DEFAULT_CLEANED_DATASETS_DIR, two_fingers_file_name), index=False, header=True)
 
     if args.analyze:
         print("analyzing data")
